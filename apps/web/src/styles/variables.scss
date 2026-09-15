@@ -1,0 +1,79 @@
+// =============================================================================
+// 主题变量: 亮色为默认值, 暗色通过 html.dark 覆盖。
+// 业务样式一律引用这些 CSS 变量, 不直接写死颜色。
+// =============================================================================
+
+:root {
+  // 品牌色
+  --app-color-primary: #2563eb;
+  --app-color-primary-light: #60a5fa;
+  --app-color-primary-dark: #1d4ed8;
+  --app-color-success: #16a34a;
+  --app-color-warning: #d97706;
+  --app-color-danger: #dc2626;
+  --app-color-info: #64748b;
+
+  // 文本
+  --app-text-primary: #1e293b;
+  --app-text-regular: #334155;
+  --app-text-secondary: #64748b;
+  --app-text-placeholder: #94a3b8;
+
+  // 背景与边框
+  --app-bg-page: #f4f6fb;
+  --app-bg-container: #ffffff;
+  --app-bg-elevated: #ffffff;
+  --app-bg-hover: #f1f5f9;
+  --app-border-color: #e2e8f0;
+  --app-border-color-light: #eef2f7;
+
+  // 侧边栏 (暗色面板, 不随主题切换)
+  --app-sidebar-bg: #111827;
+  --app-sidebar-bg-hover: #1f2937;
+  --app-sidebar-text: #cbd5e1;
+  --app-sidebar-text-active: #ffffff;
+
+  // 布局尺寸
+  --app-header-height: 60px;
+  --app-sidebar-width: 224px;
+  --app-sidebar-width-collapsed: 64px;
+  --app-radius-sm: 6px;
+  --app-radius-md: 10px;
+  --app-radius-lg: 14px;
+
+  // 阴影
+  --app-shadow-sm: 0 1px 2px rgb(15 23 42 / 6%);
+  --app-shadow-md: 0 6px 18px rgb(15 23 42 / 8%);
+  --app-shadow-lg: 0 14px 36px rgb(15 23 42 / 12%);
+
+  // Element Plus 主色联动
+  --el-color-primary: var(--app-color-primary);
+  --el-border-radius-base: var(--app-radius-sm);
+}
+
+html.dark {
+  --app-color-primary: #409eff;
+  --app-color-primary-light: #79bbff;
+  --app-color-primary-dark: #337ecc;
+
+  --app-text-primary: #e5e7eb;
+  --app-text-regular: #d1d5db;
+  --app-text-secondary: #9ca3af;
+  --app-text-placeholder: #6b7280;
+
+  --app-bg-page: #0f172a;
+  --app-bg-container: #1b2437;
+  --app-bg-elevated: #22304a;
+  --app-bg-hover: #26334d;
+  --app-border-color: #2f3d55;
+  --app-border-color-light: #29344a;
+
+  --app-sidebar-bg: #0b1220;
+  --app-sidebar-bg-hover: #16203a;
+
+  --app-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --app-shadow-md: 0 6px 18px rgb(0 0 0 / 45%);
+  --app-shadow-lg: 0 14px 36px rgb(0 0 0 / 55%);
+
+  --el-color-primary: var(--app-color-primary);
+}

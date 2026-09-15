@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 协作与开发指南
+    url: https://github.com/HeyanAdam/SoftwareEnginerringGroup4/blob/main/CONTRIBUTING.md
+    about: 分支模型、提交规范、评审流程请先看这里
+  - name: 💬 讨论区
+    url: https://github.com/HeyanAdam/SoftwareEnginerringGroup4/discussions
+    about: 方案讨论、答疑、经验分享
+  - name: 🔐 安全问题上报
+    url: https://github.com/HeyanAdam/SoftwareEnginerringGroup4/security/advisories/new
+    about: 请勿用公开 Issue 提交安全漏洞

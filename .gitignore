@@ -1,0 +1,49 @@
+# ---- env / secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- node ----
+node_modules/
+.pnpm-store/
+dist/
+dist-ssr/
+*.local
+.vite/
+coverage/
+*.tsbuildinfo
+
+# ---- python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+pytest-cache-files-*/
+.pytest-tmp/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# ---- editors / os ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+
+# ---- runtime data ----
+data/
+volumes/
+logs/
+*.log
+!infra/**/*.log
+
+# ---- misc ----
+.cache/
+tmp/

@@ -1,0 +1,34 @@
+{
+  "name": "software-enginerring-group4",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Full-stack scaffold: Vue3 + Element Plus + ECharts / FastAPI + MySQL + Redis + MinIO + WebSocket / Docker",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @app/web dev",
+    "build": "pnpm --filter @app/web build",
+    "preview": "pnpm --filter @app/web preview",
+    "type-check": "pnpm --filter @app/web type-check",
+    "test": "pnpm --filter @app/web test",
+    "lint": "pnpm --filter @app/web lint",
+    "format": "pnpm --filter @app/web format",
+    "api:install": "pnpm --filter @app/api install:py",
+    "api:dev": "pnpm --filter @app/api dev",
+    "api:test": "pnpm --filter @app/api test",
+    "api:lint": "pnpm --filter @app/api lint:py",
+    "api:migrate": "pnpm --filter @app/api migrate",
+    "api:revision": "pnpm --filter @app/api revision",
+    "up": "docker compose --env-file .env up -d --build",
+    "down": "docker compose --env-file .env down",
+    "logs": "docker compose --env-file .env logs -f --tail=200",
+    "ps": "docker compose --env-file .env ps",
+    "up:infra": "docker compose --env-file .env up -d mysql redis minio createbuckets",
+    "dev:all": "concurrently -n api,web -c blue,green \"pnpm api:dev\" \"pnpm dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
