@@ -1,0 +1,22 @@
+# ===== 通用 =====
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.local
+
+# ===== 前端 =====
+kaoyan-frontend/node_modules/
+kaoyan-frontend/dist/
+kaoyan-frontend/.vite/
+
+# ===== 后端 =====
+kaoyan-backend/venv/
+kaoyan-backend/__pycache__/
+kaoyan-backend/**/__pycache__/
+kaoyan-backend/*.pyc
+kaoyan-backend/.env
+
+# ===== IDE =====
+.vscode/
+.idea/
