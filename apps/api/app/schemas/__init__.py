@@ -1,0 +1,70 @@
+"""Schema 统一导出。"""
+
+from app.schemas.auth import (
+    CurrentUserOut,
+    LoginRequest,
+    PasswordChange,
+    RefreshRequest,
+    RegisterRequest,
+    TokenPair,
+    UserAdminUpdate,
+    UserCreate,
+    UserListItem,
+    UserUpdate,
+)
+from app.schemas.common import (
+    ApiResponse,
+    DashboardOverview,
+    DashboardSeriesPoint,
+    DashboardStat,
+    IdResponse,
+    Msg,
+    ORMModel,
+    TimestampedOut,
+)
+from app.schemas.file import (
+    FileOut,
+    FileWithUrl,
+    MultipartComplete,
+    PresignDownloadResponse,
+    PresignUploadRequest,
+    PresignUploadResponse,
+)
+from app.schemas.role import PermissionOut, RoleAssign, RoleCreate, RoleOut, RoleUpdate
+from app.schemas.ws import ChatMessageOut, ClientMessage, RoomOut, ServerMessage
+
+__all__ = [
+    "ApiResponse",
+    "ChatMessageOut",
+    "ClientMessage",
+    "CurrentUserOut",
+    "DashboardOverview",
+    "DashboardSeriesPoint",
+    "DashboardStat",
+    "FileOut",
+    "FileWithUrl",
+    "IdResponse",
+    "LoginRequest",
+    "Msg",
+    "MultipartComplete",
+    "ORMModel",
+    "PasswordChange",
+    "PermissionOut",
+    "PresignDownloadResponse",
+    "PresignUploadRequest",
+    "PresignUploadResponse",
+    "RefreshRequest",
+    "RegisterRequest",
+    "RoleAssign",
+    "RoleCreate",
+    "RoleOut",
+    "RoleUpdate",
+    "RoomOut",
+    "ServerMessage",
+    "TimestampedOut",
+    "TokenPair",
+    "UserAdminUpdate",
+    "UserCreate",
+    "UserListItem",
+    "UserUpdate",
+]

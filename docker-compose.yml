@@ -1,0 +1,294 @@
+# =============================================================================
+# SG4 —— 生产/准生产编排文件 (Compose Specification, 无需 version 字段)
+#
+# 用法 (在仓库根目录执行):
+#   cp .env.example .env        # Windows: copy .env.example .env
+#   按需修改 .env 中的密码 / 端口
+#   docker compose --env-file .env up -d --build
+#
+# 说明:
+#   * 所有密钥/端口都来自 .env, 本文件不硬编码任何真实凭据;
+#     关键变量用 ${VAR:?错误信息} 形式, 未配置时 compose 会直接报错退出。
+#   * 容器之间通过服务名互访 (mysql / redis / minio / api), 因此
+#     DATABASE_URL / REDIS_URL / MINIO_ENDPOINT 在 api 服务里被显式覆盖为容器内地址,
+#     而 .env 中的 MINIO_PUBLIC_ENDPOINT 仍保留宿主机地址供浏览器使用(预签名 URL)。
+# =============================================================================
+
+name: ${COMPOSE_PROJECT_NAME:-sg4}
+
+services:
+  # ---------------------------------------------------------------------------
+  # MySQL 8 —— 主业务数据库; utf8mb4 + utf8mb4_0900_ai_ci 保证中文/emoji 与排序正确
+  # ---------------------------------------------------------------------------
+  mysql:
+    image: mysql:8.4
+    container_name: ${COMPOSE_PROJECT_NAME:-sg4}-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      # 说明: 不需要 --default-authentication-plugin=mysql_native_password,
+      #       aiomysql + cryptography 可以正常处理 caching_sha2_password。
+      - --explicit_defaults_for_timestamp=ON
+      # 时区随 TZ 环境变量, 保证数据库与会话时间一致
+      - --default-time-zone=+08:00
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sg4}
+      MYSQL_USER: ${MYSQL_USER:-sg4}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请在 .env 中设置 MYSQL_PASSWORD}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # 首次初始化(数据卷为空时)执行的 SQL: 字符集 sanity + 库默认字符集兜底;
+      # 业务表结构全部由 alembic 迁移创建, 该脚本不建表
+      - ./infra/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # 用应用账号探活, 顺带验证账号可用
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u\"$$MYSQL_USER\" -p\"$$MYSQL_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks:
+      - app_net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # 说明: mem_limit / cpus 属于非 swarm 的 compose 语法, 在 `docker compose`(v2+) 下有效;
+    # 未设置则不限制资源。如需限制, 取消下面两行注释即可(生产建议按宿主机规格调整)。
+    # mem_limit: 1g
+    # cpus: 2.0
+
+  # ---------------------------------------------------------------------------
+  # Redis 7 —— 缓存 / 会话 / WebSocket 广播; 开启 AOF 持久化 + LRU 淘汰
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7.4-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-sg4}-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - "${REDIS_PASSWORD:?请在 .env 中设置 REDIS_PASSWORD}"
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lru
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # 供 healthcheck 的 $$REDIS_PASSWORD 展开使用 (Compose 的 $$ 会转义成字面量 $)
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?请在 .env 中设置 REDIS_PASSWORD}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - app_net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # MinIO —— S3 兼容对象存储, 存放上传附件; 9000=API, 9001=Web 控制台
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-sg4}-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?请在 .env 中设置 MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?请在 .env 中设置 MINIO_ROOT_PASSWORD}
+    ports:
+      # 对外暴露 API 与 Console; MINIO_PUBLIC_ENDPOINT 必须与此处 API 端口一致,
+      # 否则后端生成的预签名 URL 在浏览器里打不开 (见 infra/minio/README.md)
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      # minio/minio 镜像自带 mc 子命令, `mc ready local` 无需凭据即可探活
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks:
+      - app_net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # createbuckets —— 一次性任务(one-shot): 等 MinIO 就绪后创建桶并设置下载策略, 完成后退出
+  # 退出码 0 之后不会再重启, 不会常驻占用资源
+  # ---------------------------------------------------------------------------
+  createbuckets:
+    image: minio/mc:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-sg4}-createbuckets
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?请在 .env 中设置 MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?请在 .env 中设置 MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-sg4-files}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        echo "[createbuckets] 等待 MinIO 就绪: $$MINIO_ENDPOINT"
+        i=0
+        until mc alias set local "$$MINIO_ENDPOINT" "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+          i=$$((i+1))
+          if [ "$$i" -ge 30 ]; then
+            echo "[createbuckets] MinIO 连接失败, 退出" >&2
+            exit 1
+          fi
+          sleep 2
+        done
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
+        # 业务桶设为 download(匿名只读), 让 <img>/<a> 直链可用;
+        # 若希望上传文件必须走预签名 URL, 请删除下面这行, 桶保持私有。
+        mc anonymous set download "local/$$MINIO_BUCKET"
+        mc anonymous get "local/$$MINIO_BUCKET" || true
+        echo "[createbuckets] 完成: $$MINIO_BUCKET"
+    networks:
+      - app_net
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ---------------------------------------------------------------------------
+  # api —— FastAPI 后端 (镜像来自 apps/api/Dockerfile, 监听 8000)
+  # 生产环境不使用 bind mount, 代码固化在镜像里, 保证可复现
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    image: ${COMPOSE_PROJECT_NAME:-sg4}-api:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-sg4}-api
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # 容器内互访必须用服务名, 覆盖 .env 中可能指向 127.0.0.1 的值
+      DATABASE_URL: ${DATABASE_URL:-mysql+aiomysql://${MYSQL_USER:-sg4}:${MYSQL_PASSWORD:?}@mysql:3306/${MYSQL_DATABASE:-sg4}?charset=utf8mb4}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:?}@redis:6379/0}
+      MINIO_ENDPOINT: minio:9000
+      # 浏览器侧访问地址(预签名 URL 主机名), 用宿主机映射端口
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-127.0.0.1:${MINIO_API_PORT:-9000}}
+      MINIO_BUCKET: ${MINIO_BUCKET:-sg4-files}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-${MINIO_ROOT_USER:?}}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-${MINIO_ROOT_PASSWORD:?}}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
+      AUTO_CREATE_TABLES: ${AUTO_CREATE_TABLES:-1}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-1}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+    expose:
+      - "8000"
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      # 后端 liveness 探针; 镜像内已安装 curl (见 apps/api/Dockerfile),
+      # 这里显式覆盖以保持语义一致: GET /api/v1/health/live 返回 200 才算健康
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/v1/health/live >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - app_net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # 资源限制(可选): 非 swarm 的 compose v2 请使用 mem_limit / cpus;
+    # 若使用 swarm 或 compose 的 deploy 语义, 则改用下面的 deploy.resources.limits。
+    # mem_limit: 1g
+    # cpus: 2.0
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "2.0"
+    #       memory: 1g
+
+  # ---------------------------------------------------------------------------
+  # web —— 前端静态资源 + nginx 反向代理 (镜像来自 apps/web/Dockerfile, 监听 80)
+  # 容器内 nginx 会把 /api/ 与 /ws 反代到 api:8000
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    image: ${COMPOSE_PROJECT_NAME:-sg4}-web:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-sg4}-web
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      # nginx:alpine 自带 wget; 只要求返回码 < 500, 避免 3xx 被误判为不健康
+      test: ["CMD-SHELL", "wget -q -S -O /dev/null http://127.0.0.1/ 2>&1 | grep -qE 'HTTP/[0-9.]+ [1-4][0-9][0-9]'"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    networks:
+      - app_net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  app_net:
+    name: ${COMPOSE_PROJECT_NAME:-sg4}_app_net
+    driver: bridge
+
+volumes:
+  mysql_data:
+    name: ${COMPOSE_PROJECT_NAME:-sg4}_mysql_data
+  redis_data:
+    name: ${COMPOSE_PROJECT_NAME:-sg4}_redis_data
+  minio_data:
+    name: ${COMPOSE_PROJECT_NAME:-sg4}_minio_data

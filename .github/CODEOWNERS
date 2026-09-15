@@ -1,0 +1,20 @@
+# =============================================================================
+# 代码所有者: PR 会自动请求对应负责人评审
+# 团队分工确定后, 把下面的占位替换为真实 GitHub 用户名/小组
+# =============================================================================
+
+# 默认负责人 (整个仓库)
+*                       @HeyanAdam
+
+# 前端
+/apps/web/              @HeyanAdam
+# 后端
+/apps/api/              @HeyanAdam
+# 部署与基础设施
+/infra/                 @HeyanAdam
+/docker-compose*.yml    @HeyanAdam
+# CI / 协作流程
+/.github/               @HeyanAdam
+# 文档
+/docs/                  @HeyanAdam
+*.md                    @HeyanAdam

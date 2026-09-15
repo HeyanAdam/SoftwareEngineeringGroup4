@@ -1,0 +1,43 @@
+name: 📋 任务拆解
+description: 小组协作用的可执行任务 (开发/联调/文档/测试)
+title: "[Task] "
+labels: ["task"]
+body:
+  - type: input
+    id: owner
+    attributes:
+      label: 负责人
+      placeholder: "@github-id"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: 任务目标
+      description: 一句话说明产出物
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 拆解步骤
+      value: |
+        - [ ] 
+        - [ ] 
+        - [ ] 
+    validations:
+      required: true
+  - type: input
+    id: deadline
+    attributes:
+      label: 期望完成时间
+      placeholder: "2025-01-20"
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: 依赖 / 备注
+      placeholder: 依赖 #12 的接口先合入
+    validations:
+      required: false

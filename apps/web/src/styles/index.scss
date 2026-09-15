@@ -1,0 +1,201 @@
+// =============================================================================
+// 全局样式: 重置 / 主题变量 / Element Plus 微调 / 通用布局类
+// 说明: 不使用 Tailwind, 统一使用 CSS 变量 + SCSS。
+// =============================================================================
+
+@use './variables.scss';
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    'Inter', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial,
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--app-text-primary);
+  background-color: var(--app-bg-page);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--app-color-primary);
+  text-decoration: none;
+
+  &:hover {
+    color: var(--app-color-primary-light);
+  }
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin: 0;
+}
+
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+// ----------------------------- 滚动条 -----------------------------
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--app-text-placeholder);
+  border-radius: 4px;
+  opacity: 0.6;
+
+  &:hover {
+    background-color: var(--app-text-secondary);
+  }
+}
+
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+// ------------------------- 首屏骨架 -------------------------
+.app-boot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  height: 100vh;
+  color: var(--app-text-secondary);
+  background-color: var(--app-bg-page);
+
+  &__spinner {
+    width: 38px;
+    height: 38px;
+    border: 3px solid var(--app-border-color);
+    border-top-color: var(--app-color-primary);
+    border-radius: 50%;
+    animation: app-boot-spin 0.9s linear infinite;
+  }
+
+  &__text {
+    font-size: 13px;
+    letter-spacing: 0.04em;
+  }
+}
+
+@keyframes app-boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// ------------------------- 通用工具类 -------------------------
+.app-card {
+  padding: 18px 20px;
+  background-color: var(--app-bg-container);
+  border: 1px solid var(--app-border-color-light);
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-sm);
+}
+
+.text-secondary {
+  color: var(--app-text-secondary);
+}
+
+.text-muted {
+  color: var(--app-text-placeholder);
+}
+
+.text-mono {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gap-8 {
+  gap: 8px;
+}
+
+.gap-12 {
+  gap: 12px;
+}
+
+.mt-8 {
+  margin-top: 8px;
+}
+
+.mt-16 {
+  margin-top: 16px;
+}
+
+.mb-16 {
+  margin-bottom: 16px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+// --------------------- Element Plus 微调 ---------------------
+.el-card {
+  border-color: var(--app-border-color-light);
+  border-radius: var(--app-radius-md);
+}
+
+.el-table {
+  --el-table-border-color: var(--app-border-color-light);
+  --el-table-header-bg-color: var(--app-bg-hover);
+  --el-table-header-text-color: var(--app-text-secondary);
+
+  th.el-table__cell {
+    font-weight: 600;
+  }
+}
+
+.el-dialog {
+  border-radius: var(--app-radius-md);
+}
+
+.el-drawer__header {
+  margin-bottom: 12px;
+  color: var(--app-text-primary);
+}
+
+// 页面级过渡
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}

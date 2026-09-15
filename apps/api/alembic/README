@@ -1,0 +1,48 @@
+# Alembic 迁移目录
+
+## 连接串如何解析
+
+不在 `alembic.ini` 里维护 URL, 由 `alembic/env.py` 按优先级解析:
+
+1. 命令行覆盖: `alembic -x db_url=mysql+pymysql://user:pass@host:3306/sg4 upgrade head`
+2. 环境变量: `ALEMBIC_DATABASE_URL=mysql+pymysql://...`
+3. 应用配置: `app.core.config.settings.sync_database_url`
+   (由 `DATABASE_URL` 推导, 自动把 `mysql+aiomysql` 换成 `mysql+pymysql`)
+
+因此 `docker compose` / `.env` 注入的 `DATABASE_URL` 直接可用, 无需重复配置。
+
+## 常用命令
+
+```bash
+alembic upgrade head                              # 升到最新 (容器启动脚本 RUN_MIGRATIONS=1 时自动执行)
+alembic downgrade -1                              # 回滚一步
+alembic downgrade base                            # 回滚到空库
+alembic current                                   # 当前版本
+alembic history --verbose                         # 迁移历史
+alembic revision --autogenerate -m "add xxx"      # 改完模型后生成增量迁移
+alembic upgrade head --sql > upgrade.sql          # 离线导出 SQL (不连接数据库, CI 用它做冒烟检查)
+```
+
+连接失败时 `env.py` 会打印目标库 (密码已打码) 与失败原因后以非 0 退出;
+容器入口脚本对该失败是容错的 (`alembic upgrade head || echo ...`), 不会阻塞启动。
+
+## 现有迁移
+
+| revision | 内容 |
+| --- | --- |
+| `0001_initial_schema` | 初始建表: `users` `roles` `permissions` `user_roles` `role_permissions` `stored_files` `chat_rooms` `chat_messages` `daily_stats` |
+
+约束/索引命名遵循 `app/core/database.py` 的 `naming_convention`:
+`pk_<table>` / `ix_<table>_<column>` / `uq_<table>_<column>` / `fk_<table>_<column>_<reftable>`。
+
+> 注意: 模型里 `unique=True, index=True` 的列, SQLAlchemy 的 `create_all()` 只生成一个
+> 唯一索引 (`ix_...`); 而 `0001_initial_schema` 为让约束名显式可读, 同时建了 `uq_...`
+> 唯一约束与 `ix_...` 普通索引。两者语义等价 (MySQL 的唯一约束即唯一索引), 但
+> `alembic revision --autogenerate` 可能因此报出一次噪音 diff — 忽略即可, 不要真的删掉 `uq_*`。
+
+## 新增迁移流程
+
+1. 修改 `app/models/` 下的模型, 并在 `app/models/__init__.py` 导出
+2. `alembic revision --autogenerate -m "your message"`
+3. 人工检查生成的脚本 (类型变更、索引、`ondelete` 是否齐全)
+4. `alembic upgrade head` 本地验证

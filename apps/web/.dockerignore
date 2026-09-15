@@ -1,0 +1,77 @@
+# =============================================================================
+# SG4 —— apps/web 的构建忽略清单 (Vite 前端 + nginx 运行镜像)
+#
+# ⚠️ 本文件放在 infra/dockerignore/ 下是为了避免与其他 agent 抢占 apps/web 目录。
+#    启用方式(复制, 不要移动):
+#        copy infra\dockerignore\web.dockerignore apps\web\.dockerignore
+#    之后 `docker compose build web` 生效(构建上下文变小, 构建更快)。
+#
+# 注意: 前端镜像通常是多阶段构建(第一段 node 构建 dist, 第二段 nginx 提供静态文件),
+#       因此 **不要** 忽略 src/、public/、index.html、package.json、lockfile、
+#       vite.config.*、tsconfig*、nginx.conf —— 否则构建会直接失败。
+# =============================================================================
+
+# --- 版本控制 / 编辑器 ---
+.git
+.gitignore
+.gitattributes
+.github
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# --- 密钥与环境变量(构建期变量通过 --build-arg / compose 注入) ---
+.env
+.env.*
+!.env.example
+
+# --- 依赖与构建产物(容器内重新安装/重新构建) ---
+node_modules
+**/node_modules
+dist
+build
+.vite
+.cache
+.turbo
+*.tsbuildinfo
+
+# --- 包管理器缓存 ---
+.pnpm-store
+.yarn/cache
+.yarn/install-state.gz
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- 测试 / 覆盖率 / 报告 ---
+coverage
+.nyc_output
+playwright-report
+test-results
+cypress/videos
+cypress/screenshots
+tests/
+e2e/
+*.spec.ts
+*.spec.tsx
+*.test.ts
+*.test.tsx
+
+# --- 文档与杂物 ---
+*.md
+!README.md
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+Makefile
+*.bak
+*.orig
+*.rej
+
+# --- 系统文件 ---
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,89 @@
+# =============================================================================
+# SG4 —— apps/api 的构建忽略清单 (Python / FastAPI 后端)
+#
+# ⚠️ 本文件放在 infra/dockerignore/ 下是为了避免与其他 agent 抢占 apps/api 目录。
+#    启用方式(复制, 不要移动):
+#        copy infra\dockerignore\api.dockerignore apps\api\.dockerignore
+#    之后 `docker compose build api` 生效(构建上下文变小, 构建更快)。
+#
+# 说明: 下面刻意 *不* 忽略 .env, 因为若 Dockerfile 中用到它需要保留;
+#       但本项目的 compose 通过 env_file 注入变量, 因此 .env 也一并忽略更安全。
+#       如果你的 Dockerfile 依赖某个文件, 请确认它没有被这里忽略。
+# =============================================================================
+
+# --- 版本控制 / 编辑器 ---
+.git
+.gitignore
+.gitattributes
+.github
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# --- 密钥与环境变量(绝不进镜像) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python 运行期产物 ---
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+
+# --- 虚拟环境 / 依赖缓存 ---
+.venv/
+venv/
+env/
+ENV/
+.python-version
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.hypothesis/
+
+# --- 测试与文档(运行时不需要) ---
+tests/
+**/tests/
+docs/
+*.md
+!README.md
+
+# --- 本地数据 / 日志 / 临时文件 ---
+*.log
+logs/
+*.sqlite
+*.sqlite3
+*.db
+data/
+tmp/
+temp/
+.uploads/
+
+# --- 构建与部署无关文件 ---
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+Makefile
+*.bak
+*.orig
+*.rej
+
+# --- 系统文件 ---
+.DS_Store
+Thumbs.db
+desktop.ini
