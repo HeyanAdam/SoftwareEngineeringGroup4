@@ -61,7 +61,7 @@ SoftwareEngineeringGroup4/
 
 | 工具 | 版本要求 | 下载地址 |
 | --- | --- | --- |
-| Node.js | 20+（推荐 22 LTS） | https://nodejs.org |
+| Node.js | **22.18+ 或 24.12+**（前端 `engines` 与 `@tsconfig/node24` 要求，20 及以下不保证可用） | https://nodejs.org |
 | Python | 3.11+ | https://www.python.org |
 | Git | 任意 | https://git-scm.com |
 | Docker Desktop | 最新版 | https://www.docker.com/products/docker-desktop/ |

@@ -1,23 +1,31 @@
 <template>
-  <div style="padding: 40px; font-family: sans-serif;">
-    <h1>考研AI导学平台</h1>
-    <button @click="callBackend" style="padding: 10px 20px; font-size: 16px;">
-      点我调用后端
-    </button>
-    <p v-if="result" style="margin-top: 20px; color: green; font-size: 18px;">
-      后端返回：{{ result }}
-    </p>
-  </div>
+  <!-- 应用外壳：所有页面（含登录页与带布局的业务页）都通过路由渲染 -->
+  <router-view />
 </template>
 
-<script setup>
-import { ref } from 'vue'
-
-const result = ref('')
-
-async function callBackend() {
-  const res = await fetch('http://127.0.0.1:8001/api/hello')
-  const data = await res.json()
-  result.value = data.message
-}
+<script setup lang="ts">
+// App.vue 只作为路由出口，具体布局见 src/layouts/DefaultLayout.vue
 </script>
+
+<style>
+/* 全局基础样式 */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial,
+    sans-serif;
+  color: #303133;
+  background-color: #f5f7fa;
+}
+</style>
