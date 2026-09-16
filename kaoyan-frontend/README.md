@@ -2,6 +2,10 @@
 
 Vue 3 + TypeScript + Vite + Pinia + Vue Router + Element Plus + ECharts。
 
+> **当前阶段：脚手架已就绪。** 工程化配置、请求封装、路由守卫、布局都定型了；
+> `views/` 下的页面是**参考示例**，演示「列表 + 弹窗表单 + 图表」该怎么写。
+> 新增自己的页面请照 **[../docs/SCAFFOLD.md](../docs/SCAFFOLD.md)** 第 5 节的六步来。
+
 ## 环境要求
 
 | 工具 | 版本 |
@@ -37,9 +41,9 @@ npm run dev        # http://localhost:5173
 ```text
 src/
 ├── api/            接口封装，按后端模块划分
-│   ├── auth.ts     注册 / 登录 / 个人信息
-│   ├── chat.ts     AI 会话与消息
-│   ├── plan.ts     学习计划与任务
+│   ├── auth.ts     注册 / 登录 / 个人信息      ← 参考示例
+│   ├── chat.ts     AI 会话与消息                ← 参考示例
+│   ├── plan.ts     学习计划与任务               ← 参考示例
 │   └── index.ts    统一出口（authApi / chatApi / planApi）
 ├── layouts/
 │   └── DefaultLayout.vue   左侧菜单 + 顶部栏 + <router-view>
@@ -53,7 +57,7 @@ src/
 │   ├── user.ts  chat.ts  plan.ts
 ├── utils/
 │   └── request.ts  axios 实例：自动带 token、统一错误提示、401 退出登录
-└── views/
+└── views/          ← 以下页面均为参考示例，新页面照抄后改名即可
     ├── LoginView.vue  RegisterView.vue
     ├── HomeView.vue       首页：统计卡片 + ECharts 图表
     ├── ChatView.vue       AI 问答

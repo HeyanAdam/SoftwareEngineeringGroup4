@@ -2,6 +2,10 @@
 
 基于 FastAPI 的后端服务，采用「模块化单体」结构：一个进程、一套数据库，业务按模块分目录，便于多人并行开发。
 
+> **当前阶段：脚手架已就绪。** 分层约定与基础设施（配置、数据库、鉴权、异常）已定型；
+> `user` / `ai_chat` / `study_plan` 三个模块是**参考示例**，演示「一张表 + 一组接口」该怎么写。
+> 新增自己的模块请照 **[../docs/SCAFFOLD.md](../docs/SCAFFOLD.md)** 第 4 节的六步来。
+
 ## 技术栈
 
 - Python 3.11+
@@ -95,27 +99,29 @@ uvicorn app.main:app --reload --port 8001
 
 ## 接口一览
 
+> 下面三个模块都是**参考示例**，用来演示接口写法与分层方式；最终接口以需求评审结果为准。
+> 以 http://127.0.0.1:8001/docs 为最终依据。前端调用统一走 `/api/...`，由 Vite 代理转发到 8001。
+
 | 模块 | 路径 | 说明 |
 | --- | --- | --- |
 | 系统 | `GET /` | 启动确认 |
 | 系统 | `GET /api/db-check` | 数据库连接测试（返回 MySQL 版本） |
-| 用户 | `POST /api/user/register` | 注册（用户名 / 邮箱 / 密码） |
-| 用户 | `POST /api/user/login` | 登录，返回 access_token |
-| 用户 | `GET /api/user/me` | 当前登录用户信息（需 token） |
-| 用户 | `PUT /api/user/me` | 修改昵称 / 目标院校专业等资料（需 token） |
-| AI 对话 | `GET /api/ai/sessions` | 我的会话列表（需 token） |
-| AI 对话 | `POST /api/ai/sessions` | 新建会话（需 token） |
-| AI 对话 | `DELETE /api/ai/sessions/{id}` | 删除会话（需 token） |
-| AI 对话 | `GET /api/ai/sessions/{id}/messages` | 会话消息历史（需 token） |
-| AI 对话 | `POST /api/ai/sessions/{id}/messages` | 发送消息并获取回答（需 token） |
-| 学习规划 | `GET /api/plan/plans` | 我的学习计划（需 token） |
-| 学习规划 | `POST /api/plan/plans` | 创建计划（自动生成阶段任务，需 token） |
-| 学习规划 | `GET /api/plan/plans/{id}` | 计划详情含任务列表（需 token） |
-| 学习规划 | `DELETE /api/plan/plans/{id}` | 删除计划（需 token） |
-| 学习规划 | `PATCH /api/plan/tasks/{id}` | 更新任务状态 / 进度（需 token） |
-| 学习规划 | `GET /api/plan/stats` | 计划完成情况统计（需 token） |
-
-> 以 http://127.0.0.1:8001/docs 为最终依据。前端调用统一走 `/api/...`，由 Vite 代理转发到 8001。
+| 用户 🟡 | `POST /api/user/register` | 注册（用户名 / 邮箱 / 密码） |
+| 用户 🟡 | `POST /api/user/login` | 登录，返回 access_token |
+| 用户 🟡 | `GET /api/user/me` | 当前登录用户信息（需 token） |
+| 用户 🟡 | `PUT /api/user/me` | 修改昵称 / 目标院校专业等资料（需 token） |
+| AI 对话 🟡 | `GET /api/ai/sessions` | 我的会话列表（需 token） |
+| AI 对话 🟡 | `POST /api/ai/sessions` | 新建会话（需 token） |
+| AI 对话 🟡 | `DELETE /api/ai/sessions/{id}` | 删除会话（需 token） |
+| AI 对话 🟡 | `GET /api/ai/sessions/{id}/messages` | 会话消息历史（需 token） |
+| AI 对话 🟡 | `POST /api/ai/sessions/{id}/messages` | 发送消息并获取回答（需 token，回答目前是关键词规则） |
+| 学习规划 🟡 | `GET /api/plan/plans` | 我的学习计划（需 token） |
+| 学习规划 🟡 | `POST /api/plan/plans` | 创建计划（自动生成阶段任务，需 token） |
+| 学习规划 🟡 | `GET /api/plan/plans/{id}` | 计划详情含任务列表（需 token） |
+| 学习规划 🟡 | `PATCH /api/plan/plans/{id}` | 修改计划（需 token） |
+| 学习规划 🟡 | `DELETE /api/plan/plans/{id}` | 删除计划（需 token） |
+| 学习规划 🟡 | `PATCH /api/plan/tasks/{id}` | 更新任务状态 / 备注（需 token） |
+| 学习规划 🟡 | `GET /api/plan/stats` | 计划完成情况统计（需 token） |
 
 ## 数据库表
 
