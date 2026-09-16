@@ -1,121 +1,43 @@
-absl-py==2.4.0
-alembic==1.20.0
-annotated-doc==0.0.5
-annotated-types==0.8.0
-anyio==4.15.1
-argon2-cffi==25.1.0
-argon2-cffi-bindings==26.1.0
-astunparse==1.6.3
-async-timeout==5.0.1
-blinker==1.9.0
-brotlipy==0.7.0
-certifi @ file:///C:/b/abs_85o_6fm0se/croot/certifi_1671487778835/work/certifi
-cffi @ file:///C:/b/abs_49n3v2hyhr/croot/cffi_1670423218144/work
-chardet==3.0.4
-charset-normalizer @ file:///tmp/build/80754af9/charset-normalizer_1630003229654/work
-click==8.3.1
-colorama @ file:///C:/b/abs_a9ozq0l032/croot/colorama_1672387194846/work
-coloredlogs==15.0.1
-conda==23.1.0
-conda-content-trust @ file:///C:/Windows/TEMP/abs_4589313d-fc62-4ccc-81c0-b801b4449e833j1ajrwu/croots/recipe/conda-content-trust_1658126379362/work
-conda-package-handling @ file:///C:/b/abs_fcga8w0uem/croot/conda-package-handling_1672865024290/work
-conda_package_streaming @ file:///C:/b/abs_0e5n5hdal3/croot/conda-package-streaming_1670508162902/work
-contourpy==1.3.2
-cryptography @ file:///C:/b/abs_b7d7drzbky/croot/cryptography_1673298763653/work
-cycler==0.12.1
-et_xmlfile==2.0.0
-exceptiongroup==1.3.1
-fastapi==0.141.1
-filelock==3.29.0
-Flask==3.1.3
-flask-cors==6.0.2
-flatbuffers==25.12.19
-fonttools==4.62.1
-fsspec==2026.4.0
-gast==0.7.0
-google-pasta==0.2.0
-greenlet==3.5.6
-grpcio==1.80.0
-h11==0.16.0
-h5py==3.14.0
-humanfriendly==10.0
-idna==3.19
-itsdangerous==2.2.0
-Jinja2==3.1.6
-joblib==1.5.3
-keras==3.12.1
-kiwisolver==1.5.0
-libclang==18.1.1
-lightgbm==4.6.0
-Mako==1.4.1
-markdown-it-py==4.0.0
-MarkupSafe==3.0.3
-matplotlib==3.10.9
-mdurl==0.1.2
-menuinst @ file:///C:/Users/BUILDE~1/AppData/Local/Temp/abs_455sf5o0ct/croots/recipe/menuinst_1661805970842/work
-minio==7.2.20
-ml_dtypes==0.5.4
-mpmath==1.3.0
-mss==10.1.0
-namex==0.1.0
-networkx==3.4.2
-numpy==2.2.6
-onnx==1.20.1
-onnxruntime==1.23.2
-onnxslim==0.1.90
-openpyxl==3.1.5
-opt_einsum==3.4.0
-optree==0.19.0
-packaging==26.0
-pandas==2.3.3
-pi_heif==1.3.0
-pillow==12.2.0
-pluggy @ file:///C:/ci/pluggy_1648042746254/work
-protobuf==7.34.1
-pycosat @ file:///C:/b/abs_4b1rrw8pn9/croot/pycosat_1666807711599/work
-pycparser @ file:///tmp/build/80754af9/pycparser_1636541352034/work
-pycryptodome==3.23.0
-pydantic==2.13.5
-pydantic_core==2.46.5
-Pygments==2.20.0
-PyMySQL==1.2.0
-pyOpenSSL @ file:///opt/conda/conda-bld/pyopenssl_1643788558760/work
-pyparsing==3.3.2
-pyreadline3==3.5.4
-PySocks @ file:///C:/ci_310/pysocks_1642089375450/work
-python-dateutil==2.9.0.post0
-python-dotenv==1.2.3
-pytz==2026.1.post1
-redis==8.1.0
-requests==2.18.4
-rich==15.0.0
-ruamel.yaml @ file:///C:/b/abs_30ee5qbthd/croot/ruamel.yaml_1666304562000/work
-ruamel.yaml.clib @ file:///C:/b/abs_aarblxbilo/croot/ruamel.yaml.clib_1666302270884/work
-scikit-learn==1.7.2
-scipy==1.15.3
-seaborn==0.13.2
-six @ file:///tmp/build/80754af9/six_1644875935023/work
-SQLAlchemy==2.0.53
-starlette==1.6.0
-sympy==1.14.0
-tabulate==0.10.0
-tensorflow==2.21.0
-termcolor==3.3.0
-threadpoolctl==3.6.0
-tomli==2.4.1
-toolz @ file:///C:/b/abs_cfvk6rc40d/croot/toolz_1667464080130/work
-torch==2.7.0+cpu
-torchaudio==2.11.0+cpu
-tqdm @ file:///C:/b/abs_0axbz66qik/croots/recipe/tqdm_1664392691071/work
-typing-inspection==0.4.4
-typing_extensions==4.16.0
-tzdata==2026.1
-urllib3==1.22
-uvicorn==0.53.0
-websockets==16.1.1
-Werkzeug==3.1.7
-win-inet-pton @ file:///C:/ci_310/win_inet_pton_1642658466512/work
-wincertstore==0.2
-wrapt==2.1.2
-xgboost==3.2.0
-zstandard==0.18.0
+# =============================================================================
+# 考研 AI 导学平台 · 后端依赖
+#
+# 安装:  pip install -r requirements.txt
+# 说明:  只列后端真正需要的包, 版本用 ">=最低,<下一个大版本" 约束,
+#        保证在任何机器上都能装成功(不绑定本机路径/conda 环境)。
+#
+# 曾经的问题: 本文件原先是从本机 conda 环境整体导出的 121 行清单,
+# 混入了 tensorflow / torch / xgboost / matplotlib / conda 等无关包,
+# 还包含 20 多个 "@ file:///C:/b/abs_..." 本机路径依赖, 换机器必然安装失败。
+# =============================================================================
+
+# ---------- Web 框架 ----------
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
+python-multipart>=0.0.9          # 表单 / 文件上传
+
+# ---------- 数据校验与配置 ----------
+pydantic>=2.5,<3.0
+python-dotenv>=1.0,<2.0          # 读取 .env
+
+# ---------- 数据库 (MySQL) ----------
+SQLAlchemy>=2.0,<3.0
+PyMySQL>=1.1,<2.0
+cryptography>=42.0               # MySQL 8 caching_sha2_password 认证需要
+alembic>=1.13,<2.0               # 数据库迁移(逐步替换 create_all)
+
+# ---------- 缓存 / 会话 ----------
+redis>=5.0,<7.0
+
+# ---------- 对象存储 (多模态文件) ----------
+minio>=7.2,<8.0
+
+# ---------- 认证 ----------
+argon2-cffi>=23.1,<26.0          # 密码哈希(比 bcrypt 更省心, 无 72 字节限制)
+PyJWT>=2.8,<3.0                  # 签发/校验 access token
+
+# ---------- 实时通信 ----------
+websockets>=12.0                 # WebSocket 支持(uvicorn[standard] 已带, 显式声明更清晰)
+
+# ---------- 开发/自测(可选, 不装也能跑服务) ----------
+# httpx>=0.27                    # 写接口测试时需要
+# pytest>=8.0                    # 单元测试
