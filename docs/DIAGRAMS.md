@@ -623,7 +623,7 @@ sequenceDiagram
     A->>A: argon2 校验密码
     A->>A: 签发 JWT（HS256，含 sub=user_id，默认 24h）
     A-->>W: 200 {access_token, user}
-    W->>W: token 存入 localStorage（键 kaoyan_token）
+    W->>W: token 存入 localStorage（键 kaoyan_token）<br/>⚠️ 上线前改进项，见第 7 节
     W-->>U: 跳转首页，显示昵称
 
     Note over W,A: 之后每个请求自动带 Authorization: Bearer <token>
@@ -895,8 +895,9 @@ sequenceDiagram
     participant A as FastAPI
     participant R as Redis
 
-    W->>A: 建立连接 /ws?token=<access_token>
-    A->>A: 校验 JWT，失败则关闭 1008
+    W->>A: 建立连接 /ws（凭据不放 URL）
+    Note over W,A: 鉴权方式二选一：<br/>① 短期握手票据：先用 access_token 换一次性票据（30 秒有效、用后即废），再以 /ws?ticket=xxx 连接<br/>② HttpOnly + Secure + SameSite Cookie（浏览器自动携带）
+    A->>A: 校验票据或 Cookie（不允许把长期 access_token 放进查询串），失败则关闭 1008
     A-->>W: 连接就绪
     W->>A: {type:"ping"}
     A-->>W: {type:"pong"}
@@ -918,11 +919,13 @@ erDiagram
     USERS ||--o{ STUDY_PLANS : "制定"
     USERS ||--o{ MISTAKES : "积累"
     USERS ||--o{ PRACTICE_RECORDS : "产生"
+    USERS ||--o{ USER_KNOWLEDGE_POINTS : "掌握度归属"
     CHAT_SESSIONS ||--o{ CHAT_MESSAGES : "包含"
     STUDY_PLANS ||--o{ STUDY_PLAN_TASKS : "拆解为"
     QUESTIONS ||--o{ MISTAKES : "被错答"
     QUESTIONS }o--|| KNOWLEDGE_POINTS : "归属"
-    KNOWLEDGE_POINTS ||--o{ PRACTICE_RECORDS : "统计掌握度"
+    KNOWLEDGE_POINTS ||--o{ USER_KNOWLEDGE_POINTS : "被掌握"
+    USER_KNOWLEDGE_POINTS ||--o{ PRACTICE_RECORDS : "统计依据"
 
     USERS {
         int id PK
@@ -952,9 +955,18 @@ erDiagram
     }
     KNOWLEDGE_POINTS {
         int id PK
-        string subject
-        string name
-        int mastery "掌握度 0-100"
+        string subject "科目"
+        string name "知识点名称"
+        string difficulty "难度: 基础/重点/难点"
+    }
+    USER_KNOWLEDGE_POINTS {
+        int id PK
+        int user_id FK
+        int knowledge_point_id FK
+        int mastery "掌握度 0-100 (按用户维度)"
+        int correct_count
+        int wrong_count
+        datetime updated_at
     }
 ```
 
@@ -1033,6 +1045,21 @@ flowchart LR
     P2 --> P3["三期 · 决策分析<br/>3.2 择校 + 3.8 模考"]
     P3 --> P4["四期 · 数字人<br/>3.1（视剩余时间）"]
 ```
+
+---
+
+## 7. 安全相关说明（评审建议的回应）
+
+本文档的时序图**如实描述当前脚手架的实现**（如 token 存 `localStorage`、WebSocket 用查询参数传 token），
+以便组员对照代码阅读。以下两点是**已知的安全改进项**，建议在正式上线前处理：
+
+| 项 | 现状（当前实现） | 风险 | 改进建议 |
+| --- | --- | --- | --- |
+| **会话凭据存储** | access_token 存 `localStorage`（键 `kaoyan_token`），前端用 `Authorization: Bearer` 发送 | `localStorage` 可被 XSS 读取；token 有效期默认 24 小时，窗口偏长 | ① 改用 **HttpOnly + Secure + SameSite 的 Cookie** 承载会话或刷新凭据；② **缩短 access token 有效期**（如 15-30 分钟）并引入 refresh token 轮换 |
+| **WebSocket 鉴权** | 依赖查询参数（不应把长期 token 放进 URL） | URL 会被 nginx/网关访问日志、浏览器历史、Referer 记录，**等同于凭据泄露** | ① **短期一次性握手票据**：先用 access_token 换取有效期 30 秒、用后即废的 ticket，再以 `/ws?ticket=xxx` 连接；或② 改用 **HttpOnly Cookie**，浏览器自动携带。连接校验只认该凭据，不复用长期访问令牌 |
+
+> ⚠️ 实施注意：改为 Cookie 方案需要同步调整后端的 CORS 配置（`allow_credentials=True` + 明确的 `allow_origins`，不能用 `*`）与前端请求封装（`withCredentials: true`），
+> 并补上 **CSRF 防护**。这属于上线前的安全加固任务，建议单独立项。
 
 ---
 
