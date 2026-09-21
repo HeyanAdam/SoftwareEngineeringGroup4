@@ -51,7 +51,7 @@ app = FastAPI(
 )
 
 # 允许前端跨域(开发期允许本地 5173; 生产请在 .env 里改成真实域名)
-#app.add_middleware(
+app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
