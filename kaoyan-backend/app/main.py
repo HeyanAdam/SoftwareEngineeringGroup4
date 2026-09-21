@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.database import settings
 from app.core.database import check_connection, create_all, get_db
 from app.core.exceptions import register_exception_handlers
 from app.modules.ai_chat.router import router as ai_router
