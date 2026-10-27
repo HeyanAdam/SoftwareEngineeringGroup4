@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>文件存储功能测试</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, "Microsoft YaHei", sans-serif;
+        background: #f0f2f5;
+        padding: 20px;
+      }
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+      }
+      h1 {
+        color: #333;
+        margin-bottom: 20px;
+        text-align: center;
+      }
+      .card {
+        background: #fff;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      .card h2 {
+        color: #1890ff;
+        margin-bottom: 15px;
+        font-size: 18px;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      .btn-primary {
+        background: #1890ff;
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: #40a9ff;
+      }
+      .btn-danger {
+        background: #ff4d4f;
+        color: #fff;
+      }
+      .btn-danger:hover {
+        background: #ff7875;
+      }
+      input[type="file"] {
+        padding: 6px;
+      }
+      input[type="number"],
+      input[type="text"] {
+        padding: 8px;
+        border: 1px solid #d9d9d9;
+        border-radius: 4px;
+        width: 120px;
+      }
+      .progress-bar {
+        width: 100%;
+        height: 24px;
+        background: #f0f0f0;
+        border-radius: 12px;
+        overflow: hidden;
+        margin: 10px 0;
+      }
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #1890ff, #52c41a);
+        transition: width 0.3s;
+        text-align: center;
+        color: #fff;
+        font-size: 13px;
+        line-height: 24px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+      }
+      th,
+      td {
+        padding: 10px;
+        text-align: left;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 14px;
+      }
+      th {
+        background: #fafafa;
+        color: #666;
+      }
+      .log {
+        background: #1e1e1e;
+        color: #d4d4d4;
+        padding: 12px;
+        border-radius: 6px;
+        font-family: Consolas, monospace;
+        font-size: 13px;
+        max-height: 300px;
+        overflow-y: auto;
+        margin-top: 10px;
+      }
+      .log .ok {
+        color: #6a9955;
+      }
+      .log .err {
+        color: #f48771;
+      }
+      .log .info {
+        color: #569cd6;
+      }
+      .tag {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 12px;
+      }
+      .tag-small {
+        background: #e6f7ff;
+        color: #1890ff;
+      }
+      .tag-multi {
+        background: #f6ffed;
+        color: #52c41a;
+      }
+      .upload-area {
+        border: 2px dashed #d9d9d9;
+        border-radius: 8px;
+        padding: 30px;
+        text-align: center;
+        cursor: pointer;
+        transition: 0.3s;
+      }
+      .upload-area:hover {
+        border-color: #1890ff;
+        background: #e6f7ff;
+      }
+      .upload-area.dragover {
+        border-color: #1890ff;
+        background: #e6f7ff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>📦 文件存储功能测试</h1>
+
+      <!-- 小文件批量上传 -->
+      <div class="card">
+        <h2>1. 小文件批量上传（≤10MB，支持 MD5 秒传去重）</h2>
+        <div class="upload-area" id="dropZone">
+          <p>点击或拖拽文件到此处上传</p>
+          <input type="file" id="smallFiles" multiple style="display: none" />
+        </div>
+        <div id="smallResult"></div>
+      </div>
+
+      <!-- 大文件分片上传 -->
+      <div class="card">
+        <h2>2. 大文件分片上传 + 断点续传 + 后台重组</h2>
+        <div class="row">
+          <input type="file" id="bigFile" />
+          <span>分片大小(MB):</span>
+          <input type="number" id="chunkSize" value="5" min="1" />
+          <button class="btn-primary" onclick="uploadBig()">开始上传</button>
+          <button class="btn-danger" onclick="abortUpload()">放弃</button>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="bigProgress" style="width: 0%">0%</div>
+        </div>
+        <div id="bigInfo" style="font-size: 13px; color: #666"></div>
+      </div>
+
+      <!-- 文件列表 -->
+      <div class="card">
+        <h2>3. 文件列表</h2>
+        <button class="btn-primary" onclick="refreshList()">刷新列表</button>
+        <table id="fileTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>文件名</th>
+              <th>大小</th>
+              <th>MD5</th>
+              <th>来源</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <!-- 日志 -->
+      <div class="card">
+        <h2>操作日志</h2>
+        <button onclick="document.getElementById('log').innerHTML = ''">
+          清空日志
+        </button>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+
+    <script>
+      const API = "http://127.0.0.1:8001/api/file";
+
+      function log(msg, type = "info") {
+        const el = document.getElementById("log");
+        const cls = type === "ok" ? "ok" : type === "err" ? "err" : "info";
+        el.innerHTML += `<div class="${cls}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+        el.scrollTop = el.scrollHeight;
+      }
+
+      // ---------- 小文件上传 ----------
+      const dropZone = document.getElementById("dropZone");
+      const fileInput = document.getElementById("smallFiles");
+
+      dropZone.onclick = () => fileInput.click();
+      dropZone.ondragover = (e) => {
+        e.preventDefault();
+        dropZone.classList.add("dragover");
+      };
+      dropZone.ondragleave = () => dropZone.classList.remove("dragover");
+      dropZone.ondrop = (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("dragover");
+        uploadSmall(e.dataTransfer.files);
+      };
+      fileInput.onchange = () => uploadSmall(fileInput.files);
+
+      async function uploadSmall(files) {
+        if (!files.length) return;
+        const fd = new FormData();
+        for (const f of files) fd.append("files", f);
+        log(`上传 ${files.length} 个小文件...`, "info");
+        try {
+          const res = await fetch(API + "/batch", { method: "POST", body: fd });
+          const data = await res.json();
+          log(
+            `成功 ${data.success} 个，失败 ${data.failed} 个，秒传跳过 ${data.skipped} 个`,
+            data.failed > 0 ? "err" : "ok",
+          );
+          document.getElementById("smallResult").innerHTML =
+            `<div style="margin-top:10px;padding:10px;background:#f6ffed;border-radius:4px;">✅ 成功 ${data.success} 个，秒传 ${data.skipped} 个</div>`;
+          refreshList();
+        } catch (e) {
+          log("上传失败: " + e.message, "err");
+        }
+      }
+
+      // ---------- 大文件分片上传 ----------
+      let currentUploadId = null;
+
+      async function uploadBig() {
+        const file = document.getElementById("bigFile").files[0];
+        if (!file) {
+          log("请先选择文件", "err");
+          return;
+        }
+        const chunkSize =
+          parseInt(document.getElementById("chunkSize").value) * 1024 * 1024;
+        if (chunkSize < 1024 * 1024) {
+          log("分片大小不能小于 1MB", "err");
+          return;
+        }
+
+        const totalChunks = Math.ceil(file.size / chunkSize);
+        log(
+          `文件: ${file.name}, 大小: ${(file.size / 1024 / 1024).toFixed(2)}MB, 分 ${totalChunks} 片`,
+          "info",
+        );
+
+        // init
+        const initRes = await fetch(API + "/init", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: file.name,
+            total_size: file.size,
+            chunk_size: chunkSize,
+          }),
+        });
+        const initData = await initRes.json();
+        currentUploadId = initData.upload_id;
+        log(`初始化成功, upload_id=${currentUploadId}`, "ok");
+
+        // 查询已上传分片（模拟断点续传）
+        const progRes = await fetch(API + "/progress/" + currentUploadId);
+        const prog = await progRes.json();
+        const uploaded = new Set(prog.uploaded_chunks);
+        log(`已上传分片: ${prog.uploaded_chunks.join(",") || "无"}`, "info");
+
+        // 上传分片
+        for (let i = 0; i < totalChunks; i++) {
+          if (uploaded.has(i)) {
+            log(`分片 ${i} 已存在，跳过（断点续传）`, "info");
+            continue;
+          }
+          const start = i * chunkSize;
+          const end = Math.min(start + chunkSize, file.size);
+          const blob = file.slice(start, end);
+          const fd = new FormData();
+          fd.append("chunk", blob, `part-${i}`);
+          await fetch(
+            `${API}/part?upload_id=${currentUploadId}&chunk_index=${i}`,
+            { method: "POST", body: fd },
+          );
+          const pct = Math.round(((i + 1) / totalChunks) * 100);
+          document.getElementById("bigProgress").style.width = pct + "%";
+          document.getElementById("bigProgress").textContent = pct + "%";
+          log(`上传分片 ${i}/${totalChunks - 1}`, "info");
+        }
+
+        // complete
+        log("正在后台重组...", "info");
+        const compRes = await fetch(API + "/complete/" + currentUploadId, {
+          method: "POST",
+        });
+        const compData = await compRes.json();
+        if (compData.assembled) {
+          log(
+            `重组完成! 文件 ID=${compData.file.id}, MD5=${compData.file.md5}`,
+            "ok",
+          );
+          document.getElementById("bigInfo").innerHTML =
+            `<span style="color:#52c41a;">✅ 重组成功，文件ID: ${compData.file.id}, 大小: ${(compData.file.size / 1024 / 1024).toFixed(2)}MB</span>`;
+        } else {
+          log("重组失败", "err");
+        }
+        refreshList();
+      }
+
+      async function abortUpload() {
+        if (!currentUploadId) return;
+        await fetch(API + "/abort/" + currentUploadId, { method: "DELETE" });
+        log("已放弃上传", "err");
+        currentUploadId = null;
+      }
+
+      // ---------- 文件列表 ----------
+      async function refreshList() {
+        const res = await fetch(API + "/list?offset=0&limit=50");
+        const data = await res.json();
+        const tbody = document.querySelector("#fileTable tbody");
+        tbody.innerHTML = "";
+        for (const f of data.list) {
+          const tr = document.createElement("tr");
+          const tag =
+            f.source === "small"
+              ? '<span class="tag tag-small">小文件</span>'
+              : '<span class="tag tag-multi">分片重组</span>';
+          tr.innerHTML = `
+<td>${f.id}</td>
+<td>${f.original_name}</td>
+<td>${(f.size / 1024).toFixed(1)}KB</td>
+<td style="font-size:12px;color:#999;">${f.md5.substring(0, 16)}...</td>
+<td>${tag}</td>
+<td>
+<a href="${API}/download?file_id=${f.id}" target="_blank">下载</a> |
+<a href="#" onclick="delFile(${f.id});return false;" style="color:#ff4d4f;">删除</a>
+</td>`;
+          tbody.appendChild(tr);
+        }
+        log(`文件列表已刷新，共 ${data.total} 个文件`, "ok");
+      }
+
+      async function delFile(id) {
+        if (!confirm("确定删除?")) return;
+        await fetch(`${API}/${id}`, { method: "DELETE" });
+        log(`已删除文件 ${id}`, "err");
+        refreshList();
+      }
+
+      // 初始化
+      refreshList();
+      log("页面加载完成，请开始测试", "ok");
+    </script>
+  </body>
+</html>

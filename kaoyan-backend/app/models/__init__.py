@@ -4,13 +4,17 @@
 """
 
 from app.models.chat import ChatMessage, ChatSession
+from app.models.file import FileMeta, UploadChunk, UploadSession
 from app.models.plan import StudyPlan, StudyPlanTask
 from app.models.user import User
 
 __all__ = [
     "ChatMessage",
     "ChatSession",
+    "FileMeta",
     "StudyPlan",
     "StudyPlanTask",
+    "UploadChunk",
+    "UploadSession",
     "User",
 ]

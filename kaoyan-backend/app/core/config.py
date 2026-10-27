@@ -83,7 +83,14 @@ class Settings:
     # ---------------- 派生属性 ----------------
     @property
     def database_url(self) -> str:
-        """SQLAlchemy 连接串(同步驱动 PyMySQL)。"""
+        """SQLAlchemy 连接串。
+
+        本地快速验证可用 SQLite (USE_SQLITE=true, 默认开启)；
+        生产 / docker-compose 环境设 USE_SQLITE=false 走 MySQL。
+        """
+        import os as _os
+        if _os.getenv("USE_SQLITE", "true").lower() in ("1", "true", "yes", "on"):
+            return "sqlite:///./app_local.db"
         return (
             f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}"
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"

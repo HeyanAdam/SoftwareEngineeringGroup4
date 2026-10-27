@@ -10,14 +10,18 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import check_connection, create_all, get_db
 from app.core.exceptions import register_exception_handlers
 from app.modules.ai_chat.router import router as ai_router
+from app.modules.file.router import router as file_router
 from app.modules.study_plan.router import router as plan_router
 from app.modules.user.router import router as user_router
 
@@ -66,6 +70,39 @@ register_exception_handlers(app)
 app.include_router(user_router)
 app.include_router(ai_router)
 app.include_router(plan_router)
+app.include_router(file_router)
+
+# 挂载项目根目录为静态文件, 方便通过 /static/file_test.html 访问测试页面
+_STATIC_DIR = Path(__file__).resolve().parents[1]
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+
+# 修复 Swagger UI 文件上传控件不显示的问题
+# FastAPI 0.141+ 生成的 schema 用 contentMediaType, Swagger UI 需要 format:binary
+def _fix_openapi_file_schema():
+    from fastapi.openapi.utils import get_openapi
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        openapi_version=app.openapi_version,
+        description=app.description,
+        routes=app.routes,
+    )
+    def _walk(obj):
+        if isinstance(obj, dict):
+            if "contentMediaType" in obj and obj.get("type") == "string":
+                obj["format"] = "binary"
+                obj.pop("contentMediaType", None)
+            for v in obj.values():
+                _walk(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                _walk(v)
+    _walk(schema)
+    app.openapi_schema = schema
+    return schema
+
+app.openapi = _fix_openapi_file_schema
 
 
 @app.get("/", tags=["系统"], summary="服务自检")
