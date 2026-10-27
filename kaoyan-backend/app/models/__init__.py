@@ -4,17 +4,25 @@
 """
 
 from app.models.chat import ChatMessage, ChatSession
-from app.models.file import FileMeta, UploadChunk, UploadSession
+from app.models.file import (
+    FileMetaModel,
+    FileSourceEnum,
+    FileUploadChunkModel,
+    FileUploadSessionModel,
+    FileUploadStatusEnum,
+)
 from app.models.plan import StudyPlan, StudyPlanTask
 from app.models.user import User
 
 __all__ = [
     "ChatMessage",
     "ChatSession",
-    "FileMeta",
+    "FileMetaModel",
+    "FileSourceEnum",
+    "FileUploadChunkModel",
+    "FileUploadSessionModel",
+    "FileUploadStatusEnum",
     "StudyPlan",
     "StudyPlanTask",
-    "UploadChunk",
-    "UploadSession",
     "User",
 ]

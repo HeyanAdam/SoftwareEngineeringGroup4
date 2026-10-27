@@ -1,79 +1,110 @@
-"""文件存储相关模型: 上传会话、分片、已落盘文件元数据。
+"""文件存储相关 ORM 模型。
 
-协议对齐 MinIO MultipartUpload:
-    UploadSession  ← MinIO InitiateMultipartUpload
-    UploadChunk    ← MinIO UploadPart
-    FileMeta       ← MinIO ListObjects
+包含三类实体:
+    - FileUploadSessionModel: 大文件分片上传会话(断点续传核心)
+    - FileUploadChunkModel: 单个分片记录
+    - FileMetaModel: 已落盘文件元数据
+
+状态与来源使用 IntEnum 映射到 TINYINT, 符合附录 A 枚举约定。
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from enum import IntEnum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import BigInteger, DateTime, Integer, String, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
-SESSION_STATUS_UPLOADING = "uploading"
-SESSION_STATUS_ASSEMBLING = "assembling"
-SESSION_STATUS_DONE = "done"
-SESSION_STATUS_FAILED = "failed"
-SESSION_STATUS_ABORTED = "aborted"
+class FileUploadStatusEnum(IntEnum):
+    """分片上传会话状态枚举。"""
 
+    UPLOADING = 0
+    ASSEMBLING = 1
+    DONE = 2
+    FAILED = 3
+    ABORTED = 4
 
-class UploadSession(Base):
-    """大文件分片上传会话 (断点续传核心)."""
-    __tablename__ = "upload_sessions"
+class FileSourceEnum(IntEnum):
+    """文件来源枚举。"""
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    SMALL = 0
+    MULTIPART = 1
+
+class FileUploadSessionModel(Base):
+    """大文件分片上传会话模型。"""
+
+    __tablename__ = "file_upload_session"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     upload_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
-    user_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
+    user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    total_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     total_chunks: Mapped[int] = mapped_column(Integer, nullable=False)
-    chunk_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunk_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     md5: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default=SESSION_STATUS_UPLOADING)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    status: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=FileUploadStatusEnum.UPLOADING.value,
+    )
     expire_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    result_file_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_file_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
-    chunks: Mapped[list["UploadChunk"]] = relationship(
-        "UploadChunk", back_populates="session", cascade="all, delete-orphan"
+    # 通用字段
+    gmt_create: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    gmt_modified: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+    is_deleted: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+class FileUploadChunkModel(Base):
+    """分片上传记录模型。"""
+
+    __tablename__ = "file_upload_chunk"
+    __table_args__ = (
+        UniqueConstraint("upload_id", "chunk_index", name="uq_file_upload_chunk_upload_id_index"),
     )
 
-
-class UploadChunk(Base):
-    """单个分片. 同一个 (upload_id, chunk_index) 唯一."""
-    __tablename__ = "upload_chunks"
-    __table_args__ = (UniqueConstraint("upload_id", "chunk_index", name="uq_session_chunk"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    upload_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("upload_sessions.upload_id"), index=True, nullable=False
-    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    upload_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    chunk_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunk_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     chunk_md5: Mapped[str] = mapped_column(String(32), nullable=False)
     stored_path: Mapped[str] = mapped_column(String(512), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
-    session: Mapped[UploadSession] = relationship("UploadSession", back_populates="chunks")
+    # 通用字段
+    gmt_create: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    gmt_modified: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+    is_deleted: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
+class FileMetaModel(Base):
+    """已落盘文件元数据模型。"""
 
-class FileMeta(Base):
-    """已落盘文件元数据 (小文件直接落盘, 大文件由 UploadSession 重组后落盘)."""
     __tablename__ = "file_meta"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     object_key: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     original_name: Mapped[str] = mapped_column(String(255), nullable=False)
     mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     md5: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
-    user_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
-    source: Mapped[str] = mapped_column(String(16), nullable=False, default="small")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
+    source: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=FileSourceEnum.SMALL.value,
+    )
+
+    # 通用字段
+    gmt_create: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    gmt_modified: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+    is_deleted: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

@@ -49,7 +49,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     title=f"{settings.APP_NAME} - 后端",
-    description="考研 AI 导学平台后端接口。成功返回数据本身, 失败返回 {code, message, data}。",
+        description="考研 AI 导学平台后端接口。所有响应统一返回 {code, message, data} 结构。",
     version="0.2.0",
     lifespan=lifespan,
 )
