@@ -53,6 +53,7 @@ class FileUploadProgressData(BaseModel):
     chunk_size: int
     total_chunks: int
     uploaded_chunks: list[int]
+    invalid_chunks: list[int] = Field(default_factory=list)
     uploaded_count: int
     status: int
     progress: float
@@ -108,8 +109,8 @@ class FileListData(BaseModel):
 
     list: list[FileItemOut]
     total: int
-    page_num: int
-    page_size: int
+    offset: int
+    limit: int
 
 class FileDeleteData(BaseModel):
     """删除文件返回数据。"""

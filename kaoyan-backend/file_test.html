@@ -462,6 +462,9 @@
             <p>📁 点击或拖拽文件到此处（可多选）</p>
             <input type="file" id="smallFiles" multiple style="display: none" />
           </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="smallProgress" style="width: 0%">0%</div>
+          </div>
           <div id="smallResult"></div>
         </div>
       </div>
@@ -473,7 +476,7 @@
           <h3 style="color: #1890ff">🎯 一键大文件分片上传</h3>
           <div class="desc">
             自动执行 init → 逐片上传 → complete
-            重组。可中途「放弃」，再次上传自动跳过已传分片（断点续传）。
+            重组。可暂停或刷新页面，再次选择同一文件后自动跳过已传分片。
           </div>
           <div class="flow-steps" id="flowSteps">
             <div class="step" id="step-init">① 初始化</div>
@@ -490,10 +493,14 @@
               min="1"
               style="width: 80px"
             />
+            <label title="首次给第0片发送错误摘要，服务端拒绝后自动使用正确摘要重传">
+              <input type="checkbox" id="simulateCorrupt" /> 模拟首片损坏
+            </label>
             <button class="btn-primary" id="bigBtn" onclick="uploadBig()">
-              开始上传
+              开始/继续
             </button>
-            <button class="btn-danger" onclick="abortUpload()">放弃</button>
+            <button class="btn-default" onclick="pauseUpload()">暂停</button>
+            <button class="btn-danger" onclick="abortUpload()">取消并清理</button>
           </div>
           <div class="progress-bar">
             <div class="progress-fill" id="bigProgress" style="width: 0%">
@@ -666,11 +673,17 @@
             </span>
           </div>
           <div class="row">
-            <button class="btn-primary" onclick="doDownload()">下载文件</button>
+            <button class="btn-primary" onclick="doDownload()">开始下载</button>
+            <button class="btn-default" onclick="pauseDownload()">暂停</button>
+            <button class="btn-default" onclick="resumeDownload()">继续</button>
             <button class="btn-default" onclick="doDownloadInfo()">
               查看响应头（验证 206）
             </button>
           </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="dlProgress" style="width: 0%">0%</div>
+          </div>
+          <div id="dlInfo" style="font-size: 13px; color: #666"></div>
           <div id="dlResult"></div>
         </div>
       </div>
@@ -804,6 +817,17 @@
         document.getElementById("partUploadId").value = uid;
       }
 
+      function errorMessage(data, fallback = "请求失败") {
+        return data?.message || data?.detail || fallback;
+      }
+
+      function setBar(id, percent) {
+        const value = Math.max(0, Math.min(100, percent || 0));
+        const el = document.getElementById(id);
+        el.style.width = value.toFixed(1) + "%";
+        el.textContent = value.toFixed(1) + "%";
+      }
+
       // ---------- 小文件上传 ----------
       const dropZone = document.getElementById("dropZone");
       const fileInput = document.getElementById("smallFiles");
@@ -825,17 +849,34 @@
         const fd = new FormData();
         for (const f of files) fd.append("files", f);
         log(`上传 ${files.length} 个小文件...`, "info");
+        setBar("smallProgress", 0);
         try {
-          const res = await fetch(API + "/batch", { method: "POST", body: fd });
-          const data = await res.json();
-          if (!res.ok) {
-            log("上传失败: " + (data.detail || JSON.stringify(data)), "err");
+          const result = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", API + "/batch");
+            xhr.upload.onprogress = (event) => {
+              if (event.lengthComputable) {
+                setBar("smallProgress", event.loaded / event.total * 100);
+              }
+            };
+            xhr.onload = () => {
+              let data = {};
+              try { data = JSON.parse(xhr.responseText || "{}"); } catch (_) {}
+              resolve({ ok: xhr.status >= 200 && xhr.status < 300, data });
+            };
+            xhr.onerror = () => reject(new Error("网络错误"));
+            xhr.send(fd);
+          });
+          const data = result.data;
+          if (!result.ok) {
+            log("上传失败: " + errorMessage(data), "err");
             showResult(
               "smallResult",
               `<span style="color:#ff4d4f">${JSON.stringify(data)}</span>`,
             );
             return;
           }
+          setBar("smallProgress", 100);
           let html = `<b>成功 ${data.success} 个，失败 ${data.failed} 个，秒传跳过 ${data.skipped} 个</b><br><br>`;
           for (const r of data.results) {
             if (r.error)
@@ -882,7 +923,7 @@
           document.getElementById("multiResult").style.display = "block";
           fillUploadId(data.upload_id);
         } else {
-          log(`初始化失败: ${data.detail}`, "err");
+          log(`初始化失败: ${errorMessage(data)}`, "err");
         }
       }
 
@@ -911,7 +952,7 @@
           log(`分片 ${idx} 上传成功, md5=${data.chunk_md5}`, "ok");
           document.getElementById("partIndex").value = parseInt(idx) + 1;
         } else {
-          log(`分片上传失败: ${data.detail}`, "err");
+          log(`分片上传失败: ${errorMessage(data)}`, "err");
         }
       }
 
@@ -940,7 +981,7 @@
             "ok",
           );
         } else {
-          log(`查询失败: ${data.detail}`, "err");
+          log(`查询失败: ${errorMessage(data)}`, "err");
         }
       }
 
@@ -968,7 +1009,7 @@
           document.getElementById("delFileId").value = data.file.id;
           refreshList();
         } else {
-          log(`重组失败: ${data.detail}`, "err");
+          log(`重组失败: ${errorMessage(data)}`, "err");
         }
       }
 
@@ -988,7 +1029,7 @@
           fillUploadId("");
         } else {
           const data = await res.json();
-          log(`放弃失败: ${data.detail}`, "err");
+          log(`放弃失败: ${errorMessage(data)}`, "err");
         }
       }
 
@@ -1003,6 +1044,8 @@
         document.getElementById("dlRange").value = r;
       }
 
+      let downloadState = null;
+
       async function doDownload() {
         const mode = document.getElementById("dlMode").value;
         const val = document.getElementById("dlFileId").value;
@@ -1010,11 +1053,108 @@
           log("请填 " + mode, "err");
           return;
         }
-        window.open(
-          `${API}/download?${mode}=${encodeURIComponent(val)}`,
-          "_blank",
-        );
-        log(`下载文件 (${mode}=${val})`, "info");
+        downloadState = {
+          mode,
+          val,
+          received: 0,
+          total: 0,
+          chunks: [],
+          etag: null,
+          controller: null,
+          fileName: `download-${val}`,
+        };
+        setBar("dlProgress", 0);
+        await continueDownload();
+      }
+
+      function pauseDownload() {
+        if (downloadState?.controller) {
+          downloadState.controller.abort();
+          log(`下载暂停在 ${fmtSize(downloadState.received)}`, "warn");
+        }
+      }
+
+      async function resumeDownload() {
+        if (!downloadState) {
+          log("没有可继续的下载，请先点击开始下载", "warn");
+          return;
+        }
+        await continueDownload();
+      }
+
+      function responseFileName(disposition, fallback) {
+        const encoded = disposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+        if (encoded) {
+          try { return decodeURIComponent(encoded); } catch (_) {}
+        }
+        return fallback;
+      }
+
+      async function continueDownload() {
+        const state = downloadState;
+        if (!state || state.controller) return;
+        state.controller = new AbortController();
+        const headers = {};
+        if (state.received > 0) {
+          headers.Range = `bytes=${state.received}-`;
+          if (state.etag) headers["If-Range"] = state.etag;
+        }
+        const url = `${API}/download?${state.mode}=${encodeURIComponent(state.val)}`;
+        const startedAt = performance.now();
+        try {
+          const res = await fetch(url, { headers, signal: state.controller.signal });
+          if (!res.ok && res.status !== 206) {
+            let data = {};
+            try { data = await res.json(); } catch (_) {}
+            throw new Error(errorMessage(data, `HTTP ${res.status}`));
+          }
+          if (state.received > 0 && res.status === 200) {
+            // If-Range 不匹配，服务端返回完整新文件；丢弃旧片段防止拼接损坏。
+            state.received = 0;
+            state.chunks = [];
+          }
+          state.etag = res.headers.get("etag") || state.etag;
+          state.fileName = responseFileName(
+            res.headers.get("content-disposition"),
+            state.fileName,
+          );
+          const contentRange = res.headers.get("content-range");
+          const rangeTotal = contentRange?.match(/\/(\d+)$/)?.[1];
+          state.total = rangeTotal
+            ? Number(rangeTotal)
+            : state.received + Number(res.headers.get("content-length") || 0);
+
+          const reader = res.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            state.chunks.push(value);
+            state.received += value.byteLength;
+            setBar("dlProgress", state.total ? state.received / state.total * 100 : 0);
+            const seconds = Math.max((performance.now() - startedAt) / 1000, 0.1);
+            document.getElementById("dlInfo").textContent =
+              `${fmtSize(state.received)} / ${fmtSize(state.total)}，本次 ${fmtSize(state.received / seconds)}/s`;
+          }
+
+          const blob = new Blob(state.chunks);
+          const objectUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = objectUrl;
+          link.download = state.fileName;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+          setBar("dlProgress", 100);
+          log(`下载完成: ${state.fileName}，共 ${fmtSize(state.received)}`, "ok");
+          downloadState = null;
+        } catch (error) {
+          if (error.name === "AbortError") {
+            log("下载已暂停，点击继续将发送新的 Range 请求", "warn");
+          } else {
+            log(`下载失败: ${error.message}`, "err");
+          }
+        } finally {
+          if (downloadState === state) state.controller = null;
+        }
       }
 
       async function doDownloadInfo() {
@@ -1033,6 +1173,7 @@
         const headerInfo = Array.from(res.headers.entries())
           .map(([k, v]) => `${k}: ${v}`)
           .join("<br>");
+        if (res.body) await res.body.cancel();
         const color =
           res.status === 206
             ? "#52c41a"
@@ -1064,10 +1205,10 @@
           multiCnt = 0;
         for (const f of data.list) {
           totalSize += f.size;
-          if (f.source === "small") smallCnt++;
+          if (f.source === 0) smallCnt++;
           else multiCnt++;
           const tag =
-            f.source === "small"
+            f.source === 0
               ? '<span class="tag tag-small">小文件</span>'
               : '<span class="tag tag-multi">分片重组</span>';
           const tr = document.createElement("tr");
@@ -1120,7 +1261,7 @@
           refreshList();
         } else {
           const d = await res.json();
-          log(`删除失败: ${d.detail}`, "err");
+          log(`删除失败: ${errorMessage(d)}`, "err");
         }
       }
       async function delFile(id) {
@@ -1131,8 +1272,79 @@
       }
 
       // ---------- 一键大文件上传 ----------
-      let currentUploadId = null,
-        bigAborted = false;
+      let currentUploadId = null;
+      let currentUploadKey = null;
+      let currentXhr = null;
+      let uploadPaused = false;
+
+      function uploadKey(file, chunkSize) {
+        return `file-upload:${file.name}:${file.size}:${file.lastModified}:${chunkSize}`;
+      }
+
+      async function sha256Hex(blob) {
+        const buffer = await blob.arrayBuffer();
+        const digest = await crypto.subtle.digest("SHA-256", buffer);
+        return Array.from(new Uint8Array(digest))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+      }
+
+      function uploadChunkOnce(uploadId, index, blob, sha256, onProgress) {
+        return new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          currentXhr = xhr;
+          const query = new URLSearchParams({
+            upload_id: uploadId,
+            chunk_index: String(index),
+            chunk_sha256: sha256,
+          });
+          xhr.open("POST", `${API}/part?${query}`);
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) onProgress(event.loaded);
+          };
+          xhr.onload = () => {
+            currentXhr = null;
+            let data = {};
+            try { data = JSON.parse(xhr.responseText || "{}"); } catch (_) {}
+            if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+            else reject(new Error(errorMessage(data, `HTTP ${xhr.status}`)));
+          };
+          xhr.onerror = () => {
+            currentXhr = null;
+            reject(new Error("网络错误"));
+          };
+          xhr.onabort = () => {
+            currentXhr = null;
+            const error = new Error("上传已暂停");
+            error.paused = true;
+            reject(error);
+          };
+          const form = new FormData();
+          form.append("chunk", blob, `part-${index}`);
+          xhr.send(form);
+        });
+      }
+
+      async function uploadChunkWithRetry(
+        uploadId, index, blob, sha256, onProgress, simulateFirstFailure = false, maxAttempts = 3,
+      ) {
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const sentChecksum = simulateFirstFailure && attempt === 1
+              ? "0".repeat(64)
+              : sha256;
+            if (sentChecksum !== sha256) {
+              log(`模拟分片 ${index} 摘要损坏，预期服务端返回 409`, "warn");
+            }
+            return await uploadChunkOnce(uploadId, index, blob, sentChecksum, onProgress);
+          } catch (error) {
+            if (error.paused || uploadPaused) throw error;
+            if (attempt === maxAttempts) throw error;
+            log(`分片 ${index} 上传/校验失败，正在第 ${attempt + 1} 次重传`, "warn");
+            await new Promise((resolve) => setTimeout(resolve, attempt * 600));
+          }
+        }
+      }
 
       async function uploadBig() {
         const file = document.getElementById("bigFile").files[0];
@@ -1147,107 +1359,138 @@
           return;
         }
         const totalChunks = Math.ceil(file.size / chunkSize);
-        bigAborted = false;
+        uploadPaused = false;
+        currentUploadKey = uploadKey(file, chunkSize);
         document.getElementById("bigBtn").disabled = true;
         document.getElementById("bigInfo").innerHTML = "";
         document.getElementById("bigChunks").innerHTML = "";
+        setBar("bigProgress", 0);
         setStep("step-upload", "");
         setStep("step-complete", "");
+        const startedAt = performance.now();
 
-        // init
-        setStep("step-init", "active");
-        log(
-          `文件: ${file.name}, ${fmtSize(file.size)}, 分 ${totalChunks} 片`,
-          "info",
-        );
-        const initRes = await fetch(API + "/init", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filename: file.name,
-            total_size: file.size,
-            chunk_size: chunkSize,
-          }),
-        });
-        const initData = await initRes.json();
-        if (!initRes.ok) {
-          log(`初始化失败: ${initData.detail}`, "err");
-          document.getElementById("bigBtn").disabled = false;
-          return;
-        }
-        currentUploadId = initData.upload_id;
-        fillUploadId(currentUploadId);
-        setStep("step-init", "done");
-        log(`初始化成功, 共 ${initData.total_chunks} 片`, "ok");
+        try {
+          setStep("step-init", "active");
+          log(`文件: ${file.name}, ${fmtSize(file.size)}, 分 ${totalChunks} 片`, "info");
 
-        // 断点续传: 查询已传分片
-        const progRes = await fetch(
-          API + "/progress/" + encodeURIComponent(currentUploadId),
-        );
-        const prog = await progRes.json();
-        const uploaded = new Set(prog.uploaded_chunks);
-        if (uploaded.size > 0)
-          log(`断点续传: 已传 ${uploaded.size} 片, 跳过`, "warn");
-
-        // 上传分片
-        setStep("step-upload", "active");
-        for (let i = 0; i < totalChunks; i++) {
-          if (bigAborted) {
-            log("用户已放弃", "warn");
-            break;
+          let progress = null;
+          let saved = null;
+          try { saved = JSON.parse(localStorage.getItem(currentUploadKey)); } catch (_) {}
+          if (saved?.uploadId) {
+            const response = await fetch(
+              `${API}/progress/${encodeURIComponent(saved.uploadId)}`,
+            );
+            if (response.ok) {
+              progress = await response.json();
+              currentUploadId = saved.uploadId;
+              log(`恢复上传会话 ${currentUploadId}`, "warn");
+            } else {
+              localStorage.removeItem(currentUploadKey);
+            }
           }
-          renderBigChunk(i, uploaded.has(i) ? "done" : "pending");
-          if (uploaded.has(i)) continue;
-          renderBigChunk(i, "current");
-          const blob = file.slice(
-            i * chunkSize,
-            Math.min((i + 1) * chunkSize, file.size),
-          );
-          const fd = new FormData();
-          fd.append("chunk", blob, `part-${i}`);
-          const pres = await fetch(
-            `${API}/part?upload_id=${encodeURIComponent(currentUploadId)}&chunk_index=${i}`,
-            { method: "POST", body: fd },
-          );
-          if (!pres.ok) {
-            const pd = await pres.json();
-            log(`分片 ${i} 失败: ${pd.detail}`, "err");
-            document.getElementById("bigBtn").disabled = false;
-            return;
-          }
-          renderBigChunk(i, "done");
-          const pct = Math.round(((i + 1) / totalChunks) * 100);
-          document.getElementById("bigProgress").style.width = pct + "%";
-          document.getElementById("bigProgress").textContent = pct + "%";
-        }
-        if (bigAborted) {
-          document.getElementById("bigBtn").disabled = false;
-          return;
-        }
-        setStep("step-upload", "done");
 
-        // complete
-        setStep("step-complete", "active");
-        log("后台流式重组中...", "info");
-        const compRes = await fetch(
-          API + "/complete/" + encodeURIComponent(currentUploadId),
-          { method: "POST" },
-        );
-        const compData = await compRes.json();
-        document.getElementById("bigBtn").disabled = false;
-        if (compRes.ok && compData.assembled) {
+          if (!progress) {
+            const initRes = await fetch(API + "/init", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                filename: file.name,
+                total_size: file.size,
+                chunk_size: chunkSize,
+              }),
+            });
+            const initData = await initRes.json();
+            if (!initRes.ok) throw new Error(errorMessage(initData));
+            currentUploadId = initData.upload_id;
+            progress = { uploaded_chunks: [] };
+            localStorage.setItem(
+              currentUploadKey,
+              JSON.stringify({ uploadId: currentUploadId, fileName: file.name }),
+            );
+            log(`初始化成功, 共 ${initData.total_chunks} 片`, "ok");
+          }
+
+          fillUploadId(currentUploadId);
+          setStep("step-init", "done");
+          const uploaded = new Set(progress.uploaded_chunks || []);
+          if (uploaded.size > 0) {
+            log(`断点续传: 跳过已完成的 ${uploaded.size} 个分片`, "warn");
+          }
+          if (progress.invalid_chunks?.length) {
+            log(`检测到损坏分片 ${progress.invalid_chunks.join(",")}，将自动重传`, "warn");
+          }
+
+          let completedBytes = 0;
+          for (let i = 0; i < totalChunks; i++) {
+            renderBigChunk(i, uploaded.has(i) ? "done" : "pending");
+            if (uploaded.has(i)) {
+              completedBytes += Math.min(chunkSize, file.size - i * chunkSize);
+            }
+          }
+          setBar("bigProgress", completedBytes / file.size * 100);
+
+          setStep("step-upload", "active");
+          for (let i = 0; i < totalChunks; i++) {
+            if (uploaded.has(i)) continue;
+            if (uploadPaused) throw Object.assign(new Error("上传已暂停"), { paused: true });
+
+            const blob = file.slice(i * chunkSize, Math.min((i + 1) * chunkSize, file.size));
+            renderBigChunk(i, "current");
+            const checksum = await sha256Hex(blob);
+            const baseBytes = completedBytes;
+            await uploadChunkWithRetry(
+              currentUploadId,
+              i,
+              blob,
+              checksum,
+              (loaded) => {
+                const sent = baseBytes + loaded;
+                setBar("bigProgress", sent / file.size * 100);
+                const seconds = Math.max((performance.now() - startedAt) / 1000, 0.1);
+                document.getElementById("bigInfo").textContent =
+                  `${fmtSize(sent)} / ${fmtSize(file.size)}，平均 ${fmtSize(sent / seconds)}/s`;
+              },
+              i === 0 && document.getElementById("simulateCorrupt").checked,
+            );
+            completedBytes += blob.size;
+            uploaded.add(i);
+            renderBigChunk(i, "done");
+            setBar("bigProgress", completedBytes / file.size * 100);
+          }
+          setStep("step-upload", "done");
+
+          setStep("step-complete", "active");
+          log("服务端流式重组并复核全部分片中...", "info");
+          const compRes = await fetch(
+            `${API}/complete/${encodeURIComponent(currentUploadId)}`,
+            { method: "POST" },
+          );
+          const compData = await compRes.json();
+          if (!compRes.ok || !compData.assembled) {
+            const detail = compData?.data ? ` ${JSON.stringify(compData.data)}` : "";
+            throw new Error(errorMessage(compData, "重组失败") + detail);
+          }
+
+          localStorage.removeItem(currentUploadKey);
           setStep("step-complete", "done");
+          setBar("bigProgress", 100);
           log(`重组完成! 文件ID=${compData.file.id}`, "ok");
           document.getElementById("bigInfo").innerHTML =
-            `<span style="color:#52c41a;font-weight:600;">✅ 重组成功</span> &nbsp; 文件ID: <b>${compData.file.id}</b> &nbsp; 大小: ${fmtSize(compData.file.size)}`;
+            `<span style="color:#52c41a;font-weight:600;">✅ 校验及重组成功</span> &nbsp; 文件ID: <b>${compData.file.id}</b> &nbsp; 大小: ${fmtSize(compData.file.size)}`;
           document.getElementById("dlFileId").value = compData.file.id;
           document.getElementById("delFileId").value = compData.file.id;
-        } else {
-          log(`重组失败: ${compData.detail}`, "err");
-          document.getElementById("bigInfo").innerHTML =
-            `<span style="color:#ff4d4f">❌ 重组失败: ${compData.detail}</span>`;
+          refreshList();
+        } catch (error) {
+          if (error.paused || uploadPaused) {
+            log("上传已暂停；再次选择同一文件并点击开始/继续即可恢复", "warn");
+          } else {
+            log(`上传失败: ${error.message}`, "err");
+            document.getElementById("bigInfo").textContent = `❌ ${error.message}`;
+          }
+        } finally {
+          currentXhr = null;
+          document.getElementById("bigBtn").disabled = false;
         }
-        refreshList();
       }
 
       function renderBigChunk(idx, state) {
@@ -1263,16 +1506,24 @@
         cell.className = "chunk-cell " + state;
       }
 
+      function pauseUpload() {
+        uploadPaused = true;
+        if (currentXhr) currentXhr.abort();
+        document.getElementById("bigBtn").disabled = false;
+        log("暂停上传，服务端已完成的分片会保留", "warn");
+      }
+
       async function abortUpload() {
-        bigAborted = true;
-        if (currentUploadId) {
-          await fetch(API + "/abort/" + encodeURIComponent(currentUploadId), {
+        pauseUpload();
+        const uploadId = currentUploadId;
+        if (uploadId) {
+          await fetch(API + "/abort/" + encodeURIComponent(uploadId), {
             method: "DELETE",
           });
-          log("已放弃上传并清理分片", "warn");
+          if (currentUploadKey) localStorage.removeItem(currentUploadKey);
+          log("已取消上传并清理服务端分片", "warn");
           currentUploadId = null;
         }
-        document.getElementById("bigBtn").disabled = false;
       }
 
       // 初始化

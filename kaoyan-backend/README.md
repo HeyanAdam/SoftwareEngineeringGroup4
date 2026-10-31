@@ -78,6 +78,7 @@ uvicorn app.main:app --reload --port 8001
 
 - Swagger UI：http://127.0.0.1:8001/docs
 - ReDoc：http://127.0.0.1:8001/redoc
+- 文件上传下载演示：http://127.0.0.1:8001/static/file_test.html
 
 依赖的数据库服务：MySQL（宿主机端口 **3307**）、Redis（6379）、MinIO（9000 / 9001）。
 
@@ -88,6 +89,7 @@ uvicorn app.main:app --reload --port 8001
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `DB_HOST` / `DB_PORT` | `localhost` / `3307` | MySQL 地址。**端口是 3307**，compose 映射所致 |
+| `USE_SQLITE` | `true` | 文件模块本地演示使用 SQLite；连接 MySQL 时设为 `false` |
 | `DB_USER` / `DB_PASSWORD` / `DB_NAME` | `root` / `kaoyan123` / `kaoyan` | 与 `docker-compose.yml` 一致 |
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis |
 | `MINIO_ENDPOINT` | `localhost:9000` | MinIO API |
@@ -122,6 +124,25 @@ uvicorn app.main:app --reload --port 8001
 | 学习规划 🟡 | `DELETE /api/plan/plans/{id}` | 删除计划（需 token） |
 | 学习规划 🟡 | `PATCH /api/plan/tasks/{id}` | 更新任务状态 / 备注（需 token） |
 | 学习规划 🟡 | `GET /api/plan/stats` | 计划完成情况统计（需 token） |
+| 文件 | `POST /api/file/batch` | 小文件批量上传 |
+| 文件 | `POST /api/file/init`、`/part`、`/complete/{upload_id}` | 大文件分片上传及校验重组 |
+| 文件 | `GET /api/file/progress/{upload_id}` | 查询已上传分片，支持断点续传 |
+| 文件 | `GET /api/file/download` | 支持 Range、ETag、If-Range 的断点下载 |
+
+## 文件上传下载演示
+
+大文件页面会把 `upload_id` 保存到浏览器 `localStorage`。暂停或刷新页面后，重新选择同一文件并点击“开始/继续”，页面会查询服务端进度并跳过已完成分片。每个分片上传前计算 SHA-256；服务端摘要不一致时返回 `40901`，页面最多自动重传 3 次。
+
+下载页面使用流式读取显示实时进度；暂停后保留已接收字节，继续时发送 `Range` 和 `If-Range`，服务端以 `206 Partial Content` 返回剩余内容。
+
+并发下载压测（先上传文件并记录文件 ID）：
+
+```bash
+python tools/benchmark_file_download.py --file-id 1 --concurrency 20 --requests 100
+python tools/benchmark_file_download.py --file-id 1 --concurrency 50 --requests 200 --range-bytes 1048576
+```
+
+脚本输出成功率、吞吐量、平均耗时和 P95 耗时。当前为 SQLite + 本地磁盘演示架构；生产环境建议改为 MySQL + MinIO，并由 Nginx/CDN 承担大文件传输。
 
 ## 数据库表
 

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import quote
 
 
 from fastapi import APIRouter, File, HTTPException, Header, Query, UploadFile
@@ -31,6 +32,28 @@ from app.modules.file.service import (
 )
 
 router = APIRouter(prefix="/api/file", tags=["文件存储"])
+
+
+def _parse_single_range(value: str, file_size: int) -> tuple[int, int]:
+    """解析单段 HTTP bytes Range；不支持多段 Range。"""
+    if file_size <= 0:
+        raise ValueError("空文件没有可用字节范围")
+    match = re.fullmatch(r"bytes=(\d*)-(\d*)", value.strip())
+    if not match or (not match.group(1) and not match.group(2)):
+        raise ValueError("Range 格式错误")
+    start_s, end_s = match.group(1), match.group(2)
+    if start_s:
+        start = int(start_s)
+        end = min(int(end_s), file_size - 1) if end_s else file_size - 1
+    else:
+        suffix_length = int(end_s)
+        if suffix_length <= 0:
+            raise ValueError("Range 后缀长度必须为正")
+        suffix_length = min(suffix_length, file_size)
+        start, end = file_size - suffix_length, file_size - 1
+    if start >= file_size or end < start:
+        raise ValueError("Range 超出范围")
+    return start, end
 
 
 # ====================================================================
@@ -96,10 +119,17 @@ async def upload_part(
     db: DbSession,
     upload_id: str = Query(...),
     chunk_index: int = Query(..., ge=0),
+    chunk_sha256: str | None = Query(default=None, min_length=64, max_length=64),
     chunk: UploadFile = File(...),
 ) -> dict:
     data = await chunk.read()
-    c = MultipartService(db).upload_part(upload_id=upload_id, chunk_index=chunk_index, chunk_data=data)
+    c = MultipartService(db).upload_part(
+        upload_id=upload_id,
+        chunk_index=chunk_index,
+        chunk_data=data,
+        expected_size=len(data),
+        expected_sha256=chunk_sha256,
+    )
     return {"upload_id": upload_id, "chunk_index": chunk_index, "chunk_md5": c.chunk_md5}
 
 
@@ -151,6 +181,7 @@ async def download(
     file_id: int | None = Query(default=None),
     object_key: str | None = Query(default=None),
     range_header: str | None = Header(default=None, alias="Range"),
+    if_range: str | None = Header(default=None, alias="If-Range"),
 ):
     svc = FileDownloadService(db)
     meta = svc.get_meta(file_id=file_id, object_key=object_key)
@@ -161,31 +192,36 @@ async def download(
         raise HTTPException(status_code=410, detail="文件已丢失")
 
     file_size = _os.path.getsize(path_str)
+    etag = f'"{meta.md5}"'
+
+    # If-Range 不匹配说明客户端持有的是旧文件片段，应退化为完整下载。
+    if range_header and if_range and if_range != etag:
+        range_header = None
 
     if not range_header:
         return FileResponse(
             path=path_str,
             media_type=meta.mime_type or "application/octet-stream",
             filename=meta.original_name,
-            headers={"Accept-Ranges": "bytes"},
+            headers={"Accept-Ranges": "bytes", "ETag": etag},
         )
 
-    m = re.match(r"bytes=(\d*)-(\d*)", range_header)
-    if not m:
-        raise HTTPException(status_code=416, detail="Range 格式错误")
-
-    start_s, end_s = m.group(1), m.group(2)
-    start = int(start_s) if start_s else 0
-    end = int(end_s) if end_s else file_size - 1
-    if start >= file_size or end >= file_size:
+    try:
+        start, end = _parse_single_range(range_header, file_size)
+    except ValueError as exc:
         from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=416,
-            content={"detail": "超出范围"},
+            content={"detail": str(exc)},
             headers={"Content-Range": f"bytes */{file_size}"},
         )
 
     length = end - start + 1
+    fallback_name = re.sub(r'[^A-Za-z0-9._-]', "_", meta.original_name) or "download"
+    disposition = (
+        f'attachment; filename="{fallback_name}"; '
+        f"filename*=UTF-8''{quote(meta.original_name, safe='')}"
+    )
 
     async def _stream():
         import aiofiles
@@ -207,7 +243,8 @@ async def download(
             "Accept-Ranges": "bytes",
             "Content-Range": f"bytes {start}-{end}/{file_size}",
             "Content-Length": str(length),
-            "Content-Disposition": f'attachment; filename="{meta.original_name}"',
+            "Content-Disposition": disposition,
+            "ETag": etag,
         },
     )
 
@@ -219,7 +256,7 @@ async def download(
 @router.get("/list", summary="文件列表 (分页)")
 def list_files(
     db: DbSession,
-    offset: int = 0,
+    offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> dict:
     rows, total = FileDownloadService(db).list_files(offset=offset, limit=limit)
@@ -230,7 +267,7 @@ def list_files(
                 "id": r.id, "object_key": r.object_key,
                 "original_name": r.original_name, "size": r.size,
                 "md5": r.md5, "mime_type": r.mime_type,
-                "source": r.source, "created_at": r.created_at.isoformat(),
+                "source": r.source, "created_at": r.gmt_create.isoformat(),
             }
             for r in rows
         ],

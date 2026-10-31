@@ -28,13 +28,16 @@ def get_engine():
     """获取(或首次创建)全局引擎。"""
     global _engine
     if _engine is None:
-        _engine = create_engine(
-            settings.database_url,
-            echo=settings.DB_ECHO,
-            pool_pre_ping=True,   # 取连接前先探活, 避免 MySQL 8 小时断连
-            pool_recycle=3600,
-            future=True,
-        )
+        engine_kwargs = {
+            "echo": settings.DB_ECHO,
+            "pool_pre_ping": True,
+            "pool_recycle": 3600,
+            "future": True,
+        }
+        if settings.database_url.startswith("sqlite"):
+            # FastAPI 的同步依赖可能在不同工作线程中使用连接。
+            engine_kwargs["connect_args"] = {"check_same_thread": False}
+        _engine = create_engine(settings.database_url, **engine_kwargs)
     return _engine
 
 
@@ -64,8 +67,11 @@ def create_all() -> None:
 
 
 def check_connection() -> str:
-    """返回 MySQL 版本号, 用于连通性自检。"""
+    """返回当前数据库类型和版本号, 用于连通性自检。"""
     from sqlalchemy import text
 
-    with get_engine().connect() as conn:
-        return str(conn.execute(text("SELECT VERSION()")).scalar())
+    engine = get_engine()
+    sql = "SELECT sqlite_version()" if engine.dialect.name == "sqlite" else "SELECT VERSION()"
+    with engine.connect() as conn:
+        version = conn.execute(text(sql)).scalar()
+    return f"{engine.dialect.name} {version}"
