@@ -40,9 +40,9 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning("自动建表失败(数据库没启动?): %s", exc)
     try:
         version = check_connection()
-        logger.info("MySQL 连接正常, 版本: %s", version)
+        logger.info("数据库连接正常, 版本: %s", version)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("MySQL 连接失败: %s", exc)
+        logger.warning("数据库连接失败: %s", exc)
     yield
     logger.info("服务已停止")
 
@@ -112,13 +112,13 @@ def read_root() -> dict[str, str]:
 
 @app.get("/api/db-check", tags=["系统"], summary="数据库连接测试")
 def db_check(db: Session = Depends(get_db)) -> dict[str, str]:
-    """返回当前 MySQL 版本, 用于确认数据库配置是否正确。"""
+    """返回当前数据库版本, 用于确认 SQLite/MySQL 配置是否正确。"""
     try:
         version = check_connection()
         return {
             "status": "ok",
-            "message": "成功连接 MySQL",
-            "mysql_version": version,
+            "message": "成功连接数据库",
+            "database_version": version,
             "database": settings.DB_NAME,
         }
     except Exception as exc:  # noqa: BLE001  这里要把失败原因展示给开发者
@@ -126,7 +126,7 @@ def db_check(db: Session = Depends(get_db)) -> dict[str, str]:
             "status": "error",
             "message": f"连接失败: {exc}",
             "hint": (
-                f"请确认 MySQL 已启动且 .env 中 DB_PORT={settings.DB_PORT} 正确"
-                "(docker compose 映射到宿主机 3307)"
+                "SQLite 模式请确认目录可写；MySQL 模式请确认服务已启动，"
+                f"且 .env 中 DB_PORT={settings.DB_PORT} 正确"
             ),
         }

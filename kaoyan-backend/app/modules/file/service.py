@@ -17,6 +17,7 @@ FileUploadSessionModel / FileUploadChunkModel)。后续切回 MinIO 只需把本
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 import shutil
 import tempfile
@@ -58,6 +59,10 @@ def _md5_of_file(path: str | Path) -> str:
 def _md5_of_bytes(data: bytes) -> str:
     """计算字节串 MD5。"""
     return hashlib.md5(data).hexdigest()
+
+def _sha256_of_bytes(data: bytes) -> str:
+    """计算字节串 SHA-256，用于与浏览器上传前的分片摘要比较。"""
+    return hashlib.sha256(data).hexdigest()
 
 def _guess_mime(filename: str) -> str:
     """根据扩展名猜测 MIME 类型。"""
@@ -134,6 +139,11 @@ class SmallFileService:
             raise BadRequestError("至少需要 1 个文件")
         if len(files) > self.MAX_BATCH_FILES:
             raise BadRequestError(f"单次最多 {self.MAX_BATCH_FILES} 个文件")
+        known_total = sum((getattr(up, "size", None) or 0) for up in files)
+        if known_total > self.MAX_TOTAL_SIZE:
+            raise BadRequestError(
+                f"单批文件总大小不能超过 {self.MAX_TOTAL_SIZE // 1024 // 1024} MB"
+            )
 
         results: list[dict] = []
         for up in files:
@@ -290,6 +300,7 @@ class MultipartService:
         chunk_index: int,
         chunk_data: bytes,
         expected_size: int | None = None,
+        expected_sha256: str | None = None,
     ) -> FileUploadChunkModel:
         """上传单个分片。
 
@@ -298,6 +309,7 @@ class MultipartService:
             chunk_index: 分片序号。
             chunk_data: 分片二进制内容。
             expected_size: 期望大小, 可选。
+            expected_sha256: 客户端上传前计算的 SHA-256, 用于发现损坏分片。
 
         Returns:
             分片记录。
@@ -309,17 +321,33 @@ class MultipartService:
                 f"chunk_index 超出范围 [0, {session.total_chunks - 1}]"
             )
 
+        actual_expected_size = (
+            session.chunk_size
+            if chunk_index < session.total_chunks - 1
+            else session.total_size - session.chunk_size * (session.total_chunks - 1)
+        )
+        if len(chunk_data) != actual_expected_size:
+            raise BadRequestError(
+                f"分片大小不匹配: 期望 {actual_expected_size}, 收到 {len(chunk_data)}"
+            )
         if expected_size is not None and len(chunk_data) != expected_size:
             raise BadRequestError(
-                f"分片大小不匹配: 期望 {expected_size}, 收到 {len(chunk_data)}"
+                f"客户端声明的分片大小不匹配: 期望 {expected_size}, 收到 {len(chunk_data)}"
             )
 
-        # 最后一片允许比 chunk_size 小, 前面的不允许
-        if chunk_index < session.total_chunks - 1 and len(chunk_data) != session.chunk_size:
-            raise BadRequestError(
-                f"非最后一片必须是完整 chunk_size={session.chunk_size}，"
-                f"实际 {len(chunk_data)}"
-            )
+        if expected_sha256:
+            actual_sha256 = _sha256_of_bytes(chunk_data)
+            if not hmac.compare_digest(actual_sha256, expected_sha256.lower()):
+                raise ConflictError(
+                    "分片校验失败，请重传",
+                    code=40901,
+                    data={
+                        "chunk_index": chunk_index,
+                        "expected_sha256": expected_sha256.lower(),
+                        "actual_sha256": actual_sha256,
+                        "retryable": True,
+                    },
+                )
 
         chunk_md5 = _md5_of_bytes(chunk_data)
         chunk_file = _chunk_file_path(upload_id, chunk_index)
@@ -366,14 +394,31 @@ class MultipartService:
         """
         session = self._get_session(upload_id)
         stmt = (
-            select(FileUploadChunkModel.chunk_index)
+            select(FileUploadChunkModel)
             .where(
                 FileUploadChunkModel.upload_id == upload_id,
                 FileUploadChunkModel.is_deleted == 0,
             )
             .order_by(FileUploadChunkModel.chunk_index)
         )
-        indices = [r[0] for r in self.db.execute(stmt).all()]
+        indices: list[int] = []
+        invalid_indices: list[int] = []
+        for chunk in self.db.execute(stmt).scalars().all():
+            expected_size = (
+                session.chunk_size
+                if chunk.chunk_index < session.total_chunks - 1
+                else session.total_size - session.chunk_size * (session.total_chunks - 1)
+            )
+            path = Path(chunk.stored_path)
+            if (
+                0 <= chunk.chunk_index < session.total_chunks
+                and path.is_file()
+                and path.stat().st_size == expected_size
+                and _md5_of_file(path) == chunk.chunk_md5
+            ):
+                indices.append(chunk.chunk_index)
+            else:
+                invalid_indices.append(chunk.chunk_index)
         return {
             "upload_id": session.upload_id,
             "filename": session.filename,
@@ -381,6 +426,7 @@ class MultipartService:
             "chunk_size": session.chunk_size,
             "total_chunks": session.total_chunks,
             "uploaded_chunks": indices,                     # 客户端据此跳过已上传
+            "invalid_chunks": invalid_indices,              # 客户端应重传
             "uploaded_count": len(indices),
             "status": session.status,
             "progress": round(len(indices) / session.total_chunks * 100, 1),
@@ -395,16 +441,39 @@ class MultipartService:
         """
         session = self._get_session(upload_id, must_status=FileUploadStatusEnum.UPLOADING)
 
-        chunk_count = self.db.execute(
-            select(func.count(FileUploadChunkModel.id)).where(
+        chunks = list(self.db.execute(
+            select(FileUploadChunkModel).where(
                 FileUploadChunkModel.upload_id == upload_id,
                 FileUploadChunkModel.is_deleted == 0,
+            ).order_by(FileUploadChunkModel.chunk_index)
+        ).scalars().all())
+        by_index = {chunk.chunk_index: chunk for chunk in chunks}
+        missing_chunks = [i for i in range(session.total_chunks) if i not in by_index]
+        corrupt_chunks: list[int] = []
+        for i, chunk in by_index.items():
+            expected_size = (
+                session.chunk_size
+                if i < session.total_chunks - 1
+                else session.total_size - session.chunk_size * (session.total_chunks - 1)
             )
-        ).scalar_one() or 0
-        if chunk_count < session.total_chunks:
+            path = Path(chunk.stored_path)
+            if (
+                i < 0
+                or i >= session.total_chunks
+                or not path.is_file()
+                or path.stat().st_size != expected_size
+                or _md5_of_file(path) != chunk.chunk_md5
+            ):
+                corrupt_chunks.append(i)
+        if missing_chunks or corrupt_chunks:
             raise ConflictError(
-                f"分片未传完 ({chunk_count}/{session.total_chunks}), "
-                "请先补传剩余分片或查询进度接口查看哪些已上传"
+                "分片不完整或已损坏，请补传后重试",
+                code=40902,
+                data={
+                    "missing_chunks": missing_chunks,
+                    "corrupt_chunks": sorted(set(corrupt_chunks)),
+                    "retryable": True,
+                },
             )
 
         # 标记 assembling, 防止并发 complete
@@ -428,6 +497,12 @@ class MultipartService:
             )
             self.db.commit()
             return meta
+        except ConflictError:
+            # 整文件校验失败时保留分片并允许客户端补传。
+            session.status = FileUploadStatusEnum.UPLOADING.value
+            _touch_modified(session)
+            self.db.commit()
+            raise
         except Exception:  # noqa: BLE001
             session.status = FileUploadStatusEnum.FAILED.value
             _touch_modified(session)
@@ -466,6 +541,23 @@ class MultipartService:
 
             actual_size = os.path.getsize(tmp_merged_path)
             actual_md5 = _md5_of_file(tmp_merged_path)
+
+            if actual_size != session.total_size:
+                raise ConflictError(
+                    f"合并后文件大小不匹配: 期望 {session.total_size}, 实际 {actual_size}",
+                    code=40903,
+                    data={"retryable": True},
+                )
+            if session.md5 and not hmac.compare_digest(actual_md5, session.md5.lower()):
+                raise ConflictError(
+                    "合并后整文件 MD5 校验失败",
+                    code=40904,
+                    data={
+                        "expected_md5": session.md5.lower(),
+                        "actual_md5": actual_md5,
+                        "retryable": True,
+                    },
+                )
 
             # 秒传: 如果重组后 MD5 与某个已落盘文件相同, 复用那条记录
             existed = self.db.execute(
@@ -581,15 +673,15 @@ class FileDownloadService:
 
     def list_files(
         self,
-        page_num: int = 1,
-        page_size: int = 50,
+        offset: int = 0,
+        limit: int = 50,
         user_id: int | None = None,
     ) -> tuple[list[FileMetaModel], int]:
         """分页查询文件列表。
 
         Args:
-            page_num: 页码, 从 1 开始。
-            page_size: 每页条数。
+            offset: 从第几条开始。
+            limit: 最多返回多少条。
             user_id: 按用户过滤, 可选。
 
         Returns:
@@ -601,8 +693,7 @@ class FileDownloadService:
         total = self.db.execute(
             select(func.count()).select_from(stmt.subquery())
         ).scalar_one() or 0
-        offset = (page_num - 1) * page_size
-        stmt = stmt.order_by(FileMetaModel.gmt_create.desc()).offset(offset).limit(page_size)
+        stmt = stmt.order_by(FileMetaModel.gmt_create.desc()).offset(offset).limit(limit)
         rows = list(self.db.execute(stmt).scalars().all())
         return rows, total
 

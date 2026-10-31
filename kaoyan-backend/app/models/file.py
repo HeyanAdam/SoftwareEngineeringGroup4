@@ -18,6 +18,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
+# SQLite 只有名称恰好为 INTEGER 的主键列才能使用 rowid 自动生成主键。
+# MySQL 仍使用 BIGINT，SQLite 本地演示时自动切换为 INTEGER。
+FILE_ID_TYPE = BigInteger().with_variant(Integer, "sqlite")
+
 class FileUploadStatusEnum(IntEnum):
     """分片上传会话状态枚举。"""
 
@@ -38,7 +42,7 @@ class FileUploadSessionModel(Base):
 
     __tablename__ = "file_upload_session"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(FILE_ID_TYPE, primary_key=True, autoincrement=True)
     upload_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -70,7 +74,7 @@ class FileUploadChunkModel(Base):
         UniqueConstraint("upload_id", "chunk_index", name="uq_file_upload_chunk_upload_id_index"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(FILE_ID_TYPE, primary_key=True, autoincrement=True)
     upload_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -89,7 +93,7 @@ class FileMetaModel(Base):
 
     __tablename__ = "file_meta"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(FILE_ID_TYPE, primary_key=True, autoincrement=True)
     object_key: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     original_name: Mapped[str] = mapped_column(String(255), nullable=False)
     mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
