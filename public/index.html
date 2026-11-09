@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>内存数据库读写一致性 · 秒杀演示系统</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo-dot"></span>
+    <span class="brand-name">内存数据库读写一致性 · 秒杀演示系统</span>
+    <span class="brand-sub">选型：Redis</span>
+  </div>
+  <div class="topbar-right">
+    <span id="engine-badge" class="engine-badge">● 真实 Redis + MySQL 连接中…</span>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="tab-duel">① 对照实验：无Redis vs 有Redis</button>
+  <button class="tab-btn" data-tab="tab-seckill">② Redis版秒杀 · 内部细节</button>
+  <button class="tab-btn" data-tab="tab-redis-how">③ Redis 工作原理 · 原子流水线</button>
+  <button class="tab-btn" data-tab="tab-hot">④ 热点数据缓存</button>
+</nav>
+
+<main>
+
+<!-- ======================= Tab 1: 对照实验 ======================= -->
+<section id="tab-duel" class="tab active">
+
+  <div class="hero card">
+    <h2>同一批用户，两个系统，同台对照</h2>
+    <p><b style="color:var(--red)">系统A（无Redis）</b>：没有内存数据库，每个请求一个<b>真实 MySQL InnoDB 事务</b>直打磁盘库 ——
+       BEGIN → SELECT 快照读（不加锁）→ 应用层判断 → UPDATE（行锁）→ COMMIT。
+       同一行商品的 UPDATE 被<b>行锁串行化</b>，写事务毫秒级（含 fsync，比 Redis 慢百倍以上）。</p>
+    <p><b style="color:var(--green)">系统B（配Redis）</b>：库存预扣是真实 <b>EVAL seckill.lua</b> 原子脚本（查·判·扣一口气，亚毫秒），
+       抢到的订单 LPUSH 进真实 Redis 队列，由后台消费者 BRPOP 异步落库 MySQL，用户先拿到响应。</p>
+    <p class="muted">点击开始后，系统先真实并发执行全部请求，再<b>按每条请求的真实耗时逐条回放</b>：到达 → 排队等待 → 处理 → 成功/售罄/超时。
+       演示时可打开 redis-cli / mysql 客户端同步验证数据（GET stock:DUEL-B / SELECT stock FROM goods WHERE id='DUEL-A'）。</p>
+    <div class="ctrl-row" style="margin-top:12px">
+      <label>用户数</label>
+      <input type="number" id="duel-users" value="50" min="2" max="200">
+      <label>库存</label>
+      <input type="number" id="duel-stock" value="10" min="1" max="999">
+      <label>播放速度</label>
+      <select id="duel-speed">
+        <option value="0.5">0.5x 慢放（推荐演示）</option>
+        <option value="1" selected>1x 实时</option>
+      </select>
+      <label>网关超时</label>
+      <input type="number" id="duel-timeout" value="2500" min="1000" max="10000" step="500" title="请求最长等待行锁时间，超过即被数据库掐断。调低（如1000ms）可观察排队超时（MySQL 最低生效 1 秒）">
+      <button class="btn danger" id="btn-duel-start">▶ 开始对照实验</button>
+    </div>
+  </div>
+
+  <div class="duel-grid">
+    <div class="card duel-panel">
+      <h3 class="sys-a-title">系统A · 无Redis（请求直打 MySQL）</h3>
+      <div class="duel-stats" id="stats-A">
+        <span>已响应 <b>0</b></span><span class="ok">成功 <b>0</b></span><span>售罄 <b>0</b></span>
+        <span class="bad">超时 <b>0</b></span><span>平均响应 <b>-</b> ms</span><span>库存剩 <b>10</b></span>
+      </div>
+      <div class="tl-wrap">
+        <div class="tl-ruler" id="ruler-A"></div>
+        <div class="tl-rows" id="tl-A"><div class="tl-empty">等待实验开始…</div></div>
+      </div>
+      <div class="legend">
+        <span class="lg-wait">▬ 排队/锁等待</span>
+        <span class="lg-proc">▬ 数据库处理</span>
+        <span class="lg-ok">● 成功</span>
+        <span class="lg-so">● 售罄</span>
+        <span class="lg-to">● 超时(用户看到报错)</span>
+      </div>
+    </div>
+
+    <div class="card duel-panel">
+      <h3 class="sys-b-title">系统B · 配备Redis（Lua原子预扣 + 异步落库）</h3>
+      <div class="duel-stats" id="stats-B">
+        <span>已响应 <b>0</b></span><span class="ok">成功 <b>0</b></span><span>售罄 <b>0</b></span>
+        <span>平均响应 <b>-</b> ms</span><span>库存剩 <b>10</b></span>
+      </div>
+      <div class="tl-wrap">
+        <div class="tl-ruler" id="ruler-B"></div>
+        <div class="tl-rows" id="tl-B"><div class="tl-empty">等待实验开始…</div></div>
+      </div>
+      <div class="legend">
+        <span class="lg-ok">● 成功(秒回)</span>
+        <span class="lg-so">● 售罄</span>
+        <span>系统B没有超时与超卖 —— 判断与扣减在原子脚本内一次完成</span>
+      </div>
+      <div class="persist-line" id="persist-B">后台落库：等待实验…</div>
+    </div>
+  </div>
+
+  <div class="card" id="duel-banner" style="display:none"></div>
+
+</section>
+
+<!-- ======================= Tab 2: Redis版秒杀内部细节 ======================= -->
+<section id="tab-seckill" class="tab">
+
+  <div class="card">
+    <h3>系统B 内部链路（配了 Redis 之后，一次抢购的真实流程）</h3>
+    <div class="flow-wrap">
+    <svg viewBox="0 0 980 235" class="flow-svg" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="#64748b"/>
+        </marker>
+      </defs>
+      <g font-size="13" text-anchor="middle">
+        <rect x="10"  y="62" width="130" height="72" rx="10" class="fb fb-user"/>
+        <text x="75"  y="92" class="ft">用户并发</text>
+        <text x="75"  y="112" class="ft sub">10000 请求</text>
+
+        <rect x="185" y="62" width="145" height="72" rx="10" class="fb"/>
+        <text x="257" y="92" class="ft">① 网关限流</text>
+        <text x="257" y="112" class="ft sub">令牌桶拦截非法流量</text>
+
+        <rect x="375" y="52" width="185" height="92" rx="10" class="fb fb-redis"/>
+        <text x="467" y="82" class="ft">② Redis 预扣库存</text>
+        <text x="467" y="102" class="ft sub">Lua 原子脚本</text>
+        <text x="467" y="122" class="ft sub">查库存·判重复·扣减</text>
+
+        <rect x="605" y="62" width="150" height="72" rx="10" class="fb"/>
+        <text x="680" y="92" class="ft">③ 消息队列</text>
+        <text x="680" y="112" class="ft sub">削峰填谷 · 异步解耦</text>
+
+        <rect x="800" y="62" width="170" height="72" rx="10" class="fb"/>
+        <text x="885" y="92" class="ft">④ MySQL 落库</text>
+        <text x="885" y="112" class="ft sub">订单持久化 · 权威库存</text>
+
+        <rect x="375" y="172" width="185" height="48" rx="10" class="fb fb-fail"/>
+        <text x="467" y="192" class="ft sub">售罄 / 重复 → 直接拒绝</text>
+        <text x="467" y="210" class="ft sub">不触碰 MQ 与 MySQL</text>
+
+        <rect x="800" y="172" width="170" height="48" rx="10" class="fb fb-check"/>
+        <text x="885" y="192" class="ft sub">⑤ 定时对账 / 订单查询</text>
+        <text x="885" y="210" class="ft sub">最终一致性验收</text>
+      </g>
+      <g stroke="#64748b" stroke-width="1.6" fill="none" marker-end="url(#arrow)">
+        <line x1="140" y1="98" x2="180" y2="98"/>
+        <line x1="330" y1="98" x2="370" y2="98"/>
+        <line x1="560" y1="98" x2="600" y2="98"/>
+        <line x1="755" y1="98" x2="795" y2="98"/>
+        <line x1="467" y1="144" x2="467" y2="168" stroke-dasharray="4 3"/>
+        <line x1="885" y1="134" x2="885" y2="168" stroke-dasharray="4 3"/>
+      </g>
+      <g font-size="11" fill="#64748b" text-anchor="middle">
+        <text x="580" y="88">成功→投递</text>
+        <text x="777" y="88">消费</text>
+        <text x="500" y="160">220ms/单</text>
+      </g>
+    </svg>
+    </div>
+  </div>
+
+  <!-- 控制台 -->
+  <div class="seckill-grid">
+    <div class="card ctrl">
+      <h3>控制台</h3>
+      <div class="ctrl-row">
+        <label>初始库存</label>
+        <input type="number" id="input-stock" value="10" min="1" max="999">
+        <button class="btn" id="btn-reset">重置 &amp; 预热</button>
+      </div>
+      <div class="ctrl-row mode-row">
+        <label>扣减模式</label>
+        <div class="mode-btns">
+          <button class="btn mode-btn active" data-mode="locked" id="btn-mode-locked">Lua 原子模式</button>
+          <button class="btn mode-btn" data-mode="unsafe" id="btn-mode-unsafe">无锁对照模式</button>
+        </div>
+      </div>
+      <p class="mode-desc" id="mode-desc">查库存→判重复→扣减 三步在一段 Lua 脚本内原子完成，杜绝超卖（对应生产 EVAL seckill.lua）。</p>
+      <p class="muted small" style="margin-top:-6px">
+        想看超卖：先点「无锁对照模式」，再把并发压测人数设成<b>远大于库存</b>（如库存 10、压测 100），然后点「开始压测」。
+        单次抢购不会超卖——超卖只在并发下发生。
+      </p>
+
+      <div class="ctrl-row">
+        <label>用户ID</label>
+        <input type="text" id="input-userid" placeholder="留空自动分配">
+        <button class="btn primary" id="btn-seckill">单次抢购</button>
+      </div>
+      <div class="ctrl-row">
+        <label>并发压测</label>
+        <input type="number" id="input-stress" value="100" min="1" max="500">
+        <button class="btn danger" id="btn-stress">开始压测</button>
+      </div>
+      <div class="ctrl-row">
+        <label>演练工具</label>
+        <button class="btn small" id="btn-mq-toggle">暂停/恢复 MQ 消费</button>
+        <button class="btn small" id="btn-reconcile">立即对账</button>
+      </div>
+      <div id="seckill-result" class="result-banner" style="display:none"></div>
+      <div id="stress-banner" class="stress-banner" style="display:none"></div>
+    </div>
+
+    <div class="card metrics">
+      <h3>实时指标</h3>
+      <div class="metric-grid">
+        <div class="metric m-red"><span class="mv" id="m-redis-stock">10</span><span class="ml">Redis 库存（预扣）</span></div>
+        <div class="metric m-red2"><span class="mv" id="m-redis-bought">0</span><span class="ml">Redis 已购名单</span></div>
+        <div class="metric"><span class="mv" id="m-db-stock">10</span><span class="ml">DB 库存（落库扣减）</span></div>
+        <div class="metric"><span class="mv" id="m-db-orders">0</span><span class="ml">DB 订单数</span></div>
+        <div class="metric m-green"><span class="mv" id="m-success">0</span><span class="ml">预扣成功</span></div>
+        <div class="metric"><span class="mv" id="m-soldout">0</span><span class="ml">售罄拦截</span></div>
+        <div class="metric"><span class="mv" id="m-dup">0</span><span class="ml">重复拦截</span></div>
+        <div class="metric"><span class="mv" id="m-limited">0</span><span class="ml">限流拦截</span></div>
+        <div class="metric m-orange"><span class="mv" id="m-mq-size">0</span><span class="ml">MQ 积压</span></div>
+        <div class="metric m-red3 wide"><span class="mv" id="m-oversell">0</span><span class="ml">⚠ 超卖次数</span></div>
+      </div>
+      <div class="mini-stats">
+        <span>令牌桶余量: <b id="m-tokens">50</b></span>
+        <span>DB 平均写入: <b id="m-avg-write">-</b> ms</span>
+        <span>Redis 累计操作: <b id="m-ops">0</b></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>全链路实时日志 <span class="muted small">（SSE 推送：限流 / Redis / Lua / MQ / MySQL / 对账）</span></h3>
+    <div class="log-console" id="log-console"></div>
+  </div>
+
+  <div class="card">
+    <h3>订单列表（最近 30 单）<span class="muted small">—— 排队中 = 在 MQ 里；已落库 = MySQL 已持久化</span></h3>
+    <div class="table-wrap">
+      <table class="cmp-table orders-table">
+        <thead><tr><th>订单号</th><th>用户</th><th>商品</th><th>状态</th><th>创建时间</th></tr></thead>
+        <tbody id="orders-tbody"><tr><td colspan="5" class="muted">暂无订单</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+</section>
+
+<!-- ======================= Tab 3: Redis 工作原理可视化 ======================= -->
+<section id="tab-redis-how" class="tab">
+
+  <div class="card">
+    <h2>Redis 为什么快 · 为什么不会超卖</h2>
+    <p class="muted">
+      核心答案就两个字：<b>单线程</b>。Redis 用一个线程把每条命令<b>排队一条条执行</b> ——
+      没有锁竞争、没有上下文切换，每条命令执行时间<b>亚微秒级</b>。
+      下面这个面板把「并发到达 → 队列排队 → 逐条执行」的真实过程画出来，
+      并对比<b>分开两条命令</b>（有竞态窗口）vs <b>Lua 一条原子脚本</b>（无竞态）的天壤之别。
+    </p>
+  </div>
+
+  <div class="redis-how-grid">
+
+    <!-- ========== 左：控制面板 ========== -->
+    <div class="card ctrl">
+      <h3>控制面板</h3>
+
+      <div class="ctrl-row">
+        <label>初始库存</label>
+        <input type="number" id="how-stock" value="5" min="1" max="50">
+        <button class="btn" id="how-reset">重置</button>
+      </div>
+
+      <div class="ctrl-row">
+        <label>并发数</label>
+        <input type="number" id="how-count" value="20" min="2" max="200">
+      </div>
+
+      <div class="ctrl-row mode-row">
+        <label>执行模式</label>
+        <div class="mode-btns">
+          <button class="btn mode-btn" data-how-mode="unsafe" id="how-mode-unsafe">❌ 不安全（GET→DECR）</button>
+          <button class="btn mode-btn active" data-how-mode="lua" id="how-mode-lua">✓ Lua 原子</button>
+        </div>
+      </div>
+      <p class="mode-desc" id="how-mode-desc">
+        <b>不安全模式</b>：先发 GET 查库存，再发 DECR 扣减 —— 两条命令之间有竞态窗口，必超卖。<br>
+        <b>Lua 原子</b>：判重+查库存+扣减+记账 四步在一条脚本内完成，零超卖。
+      </p>
+
+      <button class="btn danger block" id="how-go">🚀 发射并发请求</button>
+
+      <div class="demo-stats" id="how-demo-stats" style="display:none">
+        <div class="ds-row"><span>总耗时</span><b id="ds-total">-</b> ms</div>
+        <div class="ds-row ok"><span>成功</span><b id="ds-ok">0</b></div>
+        <div class="ds-row warn"><span>售罄拦截</span><b id="ds-soldout">0</b></div>
+        <div class="ds-row bad"><span>⚠ 超卖</span><b id="ds-oversell">0</b></div>
+      </div>
+    </div>
+
+    <!-- ========== 中：命令流水线 ========== -->
+    <div class="card pipeline">
+      <h3>命令流水线 <span class="muted small">—— 每条命令的真实执行顺序与耗时（微秒级）</span></h3>
+      <div class="pipeline-header">
+        <span class="ph-col">用户</span>
+        <span class="ph-col ph-long">Redis 内部队列（单线程串行执行 →）</span>
+        <span class="ph-col ph-narrow">结果</span>
+        <span class="ph-col ph-narrow">耗时</span>
+      </div>
+      <div class="pipeline-body" id="how-pipeline">
+        <div class="tl-empty">等待发射…（点左下方按钮开始）</div>
+      </div>
+    </div>
+
+    <!-- ========== 右：Redis 内存快照 ========== -->
+    <div class="card snapshot">
+      <h3>Redis 内存实时快照</h3>
+      <div class="snap-grid">
+        <div class="snap-item">
+          <div class="snap-label">Key</div>
+          <div class="snap-key">demo:stock</div>
+          <div class="snap-type"><span class="type-string">string</span></div>
+          <div class="snap-val" id="snap-stock">-</div>
+        </div>
+        <div class="snap-item">
+          <div class="snap-label">Key</div>
+          <div class="snap-key">demo:bought</div>
+          <div class="snap-type"><span class="type-set">set</span></div>
+          <div class="snap-val" id="snap-bought-count">0 人</div>
+          <div class="snap-set-list" id="snap-bought-list"></div>
+        </div>
+      </div>
+      <div class="snap-footer">
+        <span>Redis 累计处理命令：<b id="snap-cmds">-</b></span>
+      </div>
+    </div>
+
+  </div>
+
+</section>
+
+<!-- ======================= Tab 4: 热点数据缓存 ======================= -->
+<section id="tab-hot" class="tab">
+
+  <div class="card">
+    <h2>热点数据：6 个商品，谁在 MySQL、谁在 Redis</h2>
+    <p class="muted">
+      所有商品的<b>真身都存在 MySQL</b>里。Redis 只存一份副本，给被反复访问的商品用。
+      下面 6 个商品里，<span class="hl-orange">⚪ 只在 MySQL</span> 的商品第一次被打开时要去数据库查（慢），
+      查完就写进 Redis；<span class="hl-green">🟢 已在 Redis</span> 的商品直接读内存（快）。
+      某个商品累计被打开 <b>3 次</b>就会被打上 <b>🔥 热点</b> 标记，缓存时间从 60 秒延长到 300 秒
+      —— 这就是「商品变成热点后自动放进 Redis」。注意：缓存都有 TTL，<b>到期就会被 Redis 自动删除</b>，
+      热点商品只是活得更久（300 秒），并不是永久驻留。
+    </p>
+    <div class="hot-legend">
+      <span class="lg db">⚪ 只在 MySQL</span>
+      <span class="lg cache">🟢 已在 Redis</span>
+      <span class="lg fire">🔥 热点商品（TTL 300s）</span>
+      <span class="lg muted">点卡片就能打开它的详情页</span>
+    </div>
+  </div>
+
+  <div class="hot-grid">
+
+    <div class="card">
+      <h3>商品列表 <span class="muted small">—— 徽章显示每个商品现在存在哪儿</span></h3>
+      <div id="hot-goods" class="goods-list">
+        <div class="tl-empty">加载中…</div>
+      </div>
+      <button class="btn small block" id="hot-reset">🔄 恢复初始状态（3 个在 Redis / 3 个在 MySQL）</button>
+    </div>
+
+    <div class="card">
+      <h3>商品详情</h3>
+      <div id="hot-detail" class="hot-detail-empty">点左边任意一个商品，打开它的详情页</div>
+
+      <div class="hot-result" id="hot-result" style="display:none">
+        <div class="hot-source" id="hot-source">-</div>
+        <div class="hot-ms">本次耗时 <b id="hot-ms">-</b> ms</div>
+        <p class="muted small" id="hot-explain">-</p>
+      </div>
+
+      <div class="hot-redis-wrap">
+        <h3>Redis 里现在有哪些商品 <span class="muted small">（真实 Redis，KEYS cache:hot:*）</span></h3>
+        <div id="hot-redis-list" class="redis-key-list">
+          <div class="tl-empty">(空)</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</section>
+
+</main>
+
+<footer>内存数据库读写一致性 · 秒杀演示系统</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
