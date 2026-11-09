@@ -1,0 +1,17 @@
+{
+  "name": "miaosha-redis-demo",
+  "version": "1.0.0",
+  "description": "内存数据库读写一致性 + 互联网秒杀场景演示系统（Redis 选型）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "dependencies": {
+    "docx": "^9.15.1",
+    "ioredis": "^6.0.0",
+    "mysql2": "^3.24.6"
+  }
+}
