@@ -1,0 +1,16 @@
+/* 全局基础样式：只做必要的重置，页面样式由各组件 scoped 管理 */
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background-color: #f5f7fa;
+}

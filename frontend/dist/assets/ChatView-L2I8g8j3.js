@@ -1,0 +1,1 @@
+import{d as c,c as s,b as e,w as _,e as t,f as n,_ as p}from"./index-DgwxqT93.js";const r={class:"chat-page"},d=c({__name:"ChatView",setup(i){return(l,m)=>{const a=t("el-empty"),o=t("el-card");return n(),s("div",r,[e(o,{shadow:"never"},{default:_(()=>[e(a,{description:"AI 问答由业务模块（ai_chat）提供，接入后即可在此对话"})]),_:1})])}}}),f=p(d,[["__scopeId","data-v-b93b4cb9"]]);export{f as default};
